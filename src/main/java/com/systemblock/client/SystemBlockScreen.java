@@ -75,22 +75,31 @@ public class SystemBlockScreen extends Screen {
         int totalBottomReserved = 32; // Single row of bottom buttons (20px) + margins
         this.terminalHeight = Math.max(70, this.height - terminalY - totalBottomReserved - 10);
 
+        // Bottom Line: [ Mode ] [ ⏹ Stop ] [ Clear Logs ] [ Done ]
+        int bottomY = this.height - 28;
+        int gap = 4;
+        int btnWidth = (inputWidth - (gap * 3)) / 4;
+
+        // Command Mode: Command input bar + Run button sitting directly above bottom buttons
+        int inputY = bottomY - 26;
+        int runBtnWidth = 46;
+        int cmdInputWidth = inputWidth - runBtnWidth - 4;
+
+        // In Command mode, the console view occupies space between terminalY and inputY (non-overlapping)
+        int consoleHeight = Math.max(50, inputY - terminalY - 4);
+
         // Row 1: Console View (for Single Command mode)
         this.consoleView = MultiLineEditBox.builder()
                 .setX(startX)
                 .setY(terminalY)
                 .setTextColor(0xFF00FF88) // Matrix / Emerald green
                 .setShowDecorations(false)
-                .build(this.font, inputWidth, terminalHeight, Component.literal("Console"));
+                .build(this.font, inputWidth, consoleHeight, Component.literal("Console"));
         this.consoleView.setValue(this.liveLogs.toString());
         this.consoleView.visible = "COMMAND".equals(currentMode);
         this.addRenderableWidget(this.consoleView);
 
-        // Single Command Mode: Optional input box for the script/command
-        int inputY = terminalY + terminalHeight - 24;
-        int runBtnWidth = 46;
-        int cmdInputWidth = inputWidth - runBtnWidth - 4;
-
+        // Command bar widgets
         this.commandInput = new EditBox(this.font, startX, inputY, cmdInputWidth, 20, Component.literal("Command"));
         this.commandInput.setMaxLength(4096);
         this.commandInput.setValue(this.blockEntity.getCommand());
@@ -105,11 +114,6 @@ public class SystemBlockScreen extends Screen {
                 }
         ).bounds(startX + cmdInputWidth + 4, inputY, runBtnWidth, 20).build());
         this.startRestartButton.visible = "COMMAND".equals(currentMode);
-
-        // Bottom Line: [ Mode ] [ ⏹ Stop ] [ Clear Logs ] [ Done ]
-        int bottomY = this.height - 28;
-        int gap = 4;
-        int btnWidth = (inputWidth - (gap * 3)) / 4;
 
         // Mode button
         this.modeToggleButton = this.addRenderableWidget(Button.builder(
@@ -149,13 +153,26 @@ public class SystemBlockScreen extends Screen {
         ).bounds(startX + (btnWidth + gap) * 3, bottomY, inputWidth - (btnWidth + gap) * 3, 20).build());
 
         updateModeVisibility();
+
+        // Ensure keyboard focus defaults to command input bar when entering Command mode
+        if ("COMMAND".equals(currentMode)) {
+            this.setInitialFocus(this.commandInput);
+        }
     }
 
     private void updateModeVisibility() {
         boolean isCmd = "COMMAND".equals(currentMode);
         if (this.consoleView != null) this.consoleView.visible = isCmd;
-        if (this.commandInput != null) this.commandInput.visible = isCmd;
+        if (this.commandInput != null) {
+            this.commandInput.visible = isCmd;
+            if (isCmd) {
+                this.setFocused(this.commandInput);
+            }
+        }
         if (this.startRestartButton != null) this.startRestartButton.visible = isCmd;
+        if (!isCmd) {
+            this.setFocused(null);
+        }
     }
 
     private void saveCommand() {

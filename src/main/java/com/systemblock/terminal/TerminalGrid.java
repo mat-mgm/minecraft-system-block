@@ -48,6 +48,7 @@ public class TerminalGrid {
     // ANSI escape parsing state
     private boolean inEscape = false;
     private boolean inCsi = false;
+    private boolean inOsc = false;
     private final StringBuilder csiParams = new StringBuilder();
 
     public TerminalGrid() {
@@ -99,12 +100,26 @@ public class TerminalGrid {
         for (int i = 0; i < len; i++) {
             char ch = text.charAt(i);
 
+            if (inOsc) {
+                // OSC command (like set title \033]...\007 or \033]...\033\)
+                if (ch == 7 || ch == '\007') { // BEL
+                    inOsc = false;
+                    inEscape = false;
+                } else if (ch == '\033') {
+                    inOsc = false;
+                    inEscape = true;
+                }
+                continue;
+            }
+
             if (inEscape) {
                 if (ch == '[') {
                     inCsi = true;
                     csiParams.setLength(0);
+                } else if (ch == ']') {
+                    inOsc = true;
                 } else if (inCsi) {
-                    if ((ch >= '0' && ch <= '9') || ch == ';' || ch == '?' || ch == '=') {
+                    if ((ch >= '0' && ch <= '9') || ch == ';' || ch == '?' || ch == '=' || ch == '$' || ch == ' ') {
                         csiParams.append(ch);
                     } else {
                         // Execution character
@@ -125,6 +140,7 @@ public class TerminalGrid {
             if (ch == '\033') { // ESC
                 inEscape = true;
                 inCsi = false;
+                inOsc = false;
                 continue;
             }
 
@@ -264,10 +280,24 @@ public class TerminalGrid {
                 int c256 = parseSafe(parts[i + 2], 7);
                 if (c256 < 16) currentFg = ANSI_PALETTE[c256];
                 i += 2;
+            } else if (code == 38 && i + 4 < parts.length && "2".equals(parts[i + 1])) {
+                // 24-bit RGB TrueColor: 38;2;r;g;b
+                int r = Math.max(0, Math.min(255, parseSafe(parts[i + 2], 255)));
+                int g = Math.max(0, Math.min(255, parseSafe(parts[i + 3], 255)));
+                int b = Math.max(0, Math.min(255, parseSafe(parts[i + 4], 255)));
+                currentFg = 0xFF000000 | (r << 16) | (g << 8) | b;
+                i += 4;
             } else if (code == 48 && i + 2 < parts.length && "5".equals(parts[i + 1])) {
                 int c256 = parseSafe(parts[i + 2], 0);
                 if (c256 < 16) currentBg = ANSI_PALETTE[c256];
                 i += 2;
+            } else if (code == 48 && i + 4 < parts.length && "2".equals(parts[i + 1])) {
+                // 24-bit RGB TrueColor: 48;2;r;g;b
+                int r = Math.max(0, Math.min(255, parseSafe(parts[i + 2], 0)));
+                int g = Math.max(0, Math.min(255, parseSafe(parts[i + 3], 0)));
+                int b = Math.max(0, Math.min(255, parseSafe(parts[i + 4], 0)));
+                currentBg = 0xFF000000 | (r << 16) | (g << 8) | b;
+                i += 4;
             }
         }
     }

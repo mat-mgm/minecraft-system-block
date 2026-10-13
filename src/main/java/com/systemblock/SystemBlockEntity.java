@@ -31,9 +31,10 @@ public class SystemBlockEntity extends BlockEntity {
     private final LinkedList<String> logBuffer = new LinkedList<>();
     private static final int MAX_BUFFER_LINES = 300;
 
-    // Active host process & stdin writer
+    // Active host process & stdin streams
     private Process activeProcess = null;
-    private BufferedWriter processStdin = null;
+    private OutputStream processStdinStream = null;
+    private BufferedWriter processStdinWriter = null;
 
     // IPC manager for agent redstone signals (mc-signal helper & signal.cmd)
     private final com.systemblock.ipc.BlockIpcManager ipcManager;
@@ -127,14 +128,14 @@ public class SystemBlockEntity extends BlockEntity {
     }
 
     public synchronized void sendInputToProcess(String input, boolean raw) {
-        if (isProcessRunning() && processStdin != null) {
+        if (isProcessRunning() && processStdinStream != null) {
             try {
-                processStdin.write(input);
-                if (!raw && !input.endsWith("\n")) {
-                    processStdin.newLine();
-                }
-                processStdin.flush();
-                if (!raw) {
+                if (raw) {
+                    processStdinStream.write(input.getBytes(StandardCharsets.UTF_8));
+                    processStdinStream.flush();
+                } else {
+                    processStdinStream.write((input.endsWith("\n") ? input : input + "\n").getBytes(StandardCharsets.UTF_8));
+                    processStdinStream.flush();
                     appendLog("> " + input);
                 }
             } catch (IOException e) {
@@ -171,7 +172,15 @@ public class SystemBlockEntity extends BlockEntity {
             return;
         }
 
-        final String targetCmd = (cmdToRun != null && !cmdToRun.trim().isEmpty()) ? cmdToRun.trim() : this.command.trim();
+        String rawCmd = (cmdToRun != null && !cmdToRun.trim().isEmpty()) ? cmdToRun.trim() : this.command.trim();
+        final boolean isTerminalMode = "TERMINAL".equals(this.mode);
+
+        // If in Terminal mode and no explicit command was configured, launch default interactive system shell
+        if (rawCmd.isEmpty() && isTerminalMode) {
+            rawCmd = "$SHELL";
+        }
+
+        final String targetCmd = rawCmd;
         if (targetCmd.isEmpty()) {
             appendLog("[No command configured to execute]");
             return;
@@ -201,7 +210,7 @@ public class SystemBlockEntity extends BlockEntity {
                     pb.environment().put("PATH", ipcBinPath + (sysPath != null ? ";" + sysPath : ""));
                 } else {
                     // Unix (macOS & Linux)
-                    pb = new ProcessBuilder(buildUnixCommand(targetCmd, isMac));
+                    pb = new ProcessBuilder(buildUnixCommand(targetCmd, isMac, isTerminalMode));
                     String currentPath = System.getenv("PATH");
                     StringBuilder enrichedPath = new StringBuilder();
                     enrichedPath.append(ipcBinPath).append(":"); // Ensure mc-signal is immediately in PATH
@@ -238,22 +247,26 @@ public class SystemBlockEntity extends BlockEntity {
                 Process process = pb.start();
                 synchronized (this) {
                     this.activeProcess = process;
-                    this.processStdin = new BufferedWriter(new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8));
+                    this.processStdinStream = process.getOutputStream();
+                    this.processStdinWriter = new BufferedWriter(new OutputStreamWriter(this.processStdinStream, StandardCharsets.UTF_8));
                 }
 
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        appendLog(line);
+                try (InputStream inputStream = process.getInputStream()) {
+                    byte[] buffer = new byte[2048];
+                    int bytesRead;
+                    while ((bytesRead = inputStream.read(buffer)) != -1) {
+                        String chunk = new String(buffer, 0, bytesRead, StandardCharsets.UTF_8);
+                        appendLog(chunk);
                     }
                 }
 
                 int exitCode = process.waitFor();
-                appendLog("[Session exited with code: " + exitCode + "]");
+                appendLog("\n[Session exited with code: " + exitCode + "]");
 
                 synchronized (this) {
                     this.activeProcess = null;
-                    this.processStdin = null;
+                    this.processStdinStream = null;
+                    this.processStdinWriter = null;
                 }
 
                 // If exit code is 0 and pulseOnSuccess is enabled, emit redstone pulse
@@ -270,7 +283,8 @@ public class SystemBlockEntity extends BlockEntity {
                 appendLog("[Error: " + e.getMessage() + "]");
                 synchronized (this) {
                     this.activeProcess = null;
-                    this.processStdin = null;
+                    this.processStdinStream = null;
+                    this.processStdinWriter = null;
                 }
             }
         }, "SystemBlock-Terminal-" + pos.getX() + "-" + pos.getY() + "-" + pos.getZ());
@@ -278,7 +292,51 @@ public class SystemBlockEntity extends BlockEntity {
         runner.start();
     }
 
-    private static String[] buildUnixCommand(String cmd, boolean isMac) {
+    private static String[] buildUnixCommand(String cmd, boolean isMac, boolean isTerminalMode) {
+        // If interactive terminal mode requested default shell or PTY runner
+        if (isTerminalMode && ("$SHELL".equals(cmd) || cmd.isEmpty())) {
+            // Check for python3 with pty module to provide authentic VT100 / PTY interactive terminal session
+            String pyScript = "import pty, os, sys, select, termios, fcntl, struct, threading\n"
+                    + "m, s = pty.openpty()\n"
+                    + "try: fcntl.ioctl(m, termios.TIOCSWINSZ, struct.pack('HHHH', 24, 80, 0, 0))\n"
+                    + "except Exception: pass\n"
+                    + "pid = os.fork()\n"
+                    + "if pid == 0:\n"
+                    + "  os.close(m); os.setsid()\n"
+                    + "  try: fcntl.ioctl(s, termios.TIOCSCTTY, 0)\n"
+                    + "  except Exception: pass\n"
+                    + "  for fd in (0, 1, 2): os.dup2(s, fd)\n"
+                    + "  if s > 2: os.close(s)\n"
+                    + "  shell = os.environ.get('SHELL', '/bin/sh')\n"
+                    + "  os.execlp(shell, shell, '-i')\n"
+                    + "else:\n"
+                    + "  os.close(s)\n"
+                    + "  def fwd():\n"
+                    + "    while True:\n"
+                    + "      try:\n"
+                    + "        b = sys.stdin.buffer.read(1)\n"
+                    + "        if not b: break\n"
+                    + "        os.write(m, b)\n"
+                    + "      except Exception: break\n"
+                    + "  threading.Thread(target=fwd, daemon=True).start()\n"
+                    + "  while True:\n"
+                    + "    try:\n"
+                    + "      d = os.read(m, 1024)\n"
+                    + "      if not d: break\n"
+                    + "      sys.stdout.buffer.write(d); sys.stdout.buffer.flush()\n"
+                    + "    except OSError: break\n";
+
+            File pyBin = new File("/etc/profiles/per-user/rs/bin/python3");
+            if (pyBin.exists() && pyBin.canExecute()) {
+                return new String[] { pyBin.getAbsolutePath(), "-c", pyScript };
+            }
+            pyBin = new File("/usr/bin/python3");
+            if (pyBin.exists() && pyBin.canExecute()) {
+                return new String[] { pyBin.getAbsolutePath(), "-c", pyScript };
+            }
+            return new String[] { "python3", "-c", pyScript };
+        }
+
         if (isMac) {
             // macOS prefers /bin/zsh (default on macOS 10.15+) or /bin/bash
             File zsh = new File("/bin/zsh");
