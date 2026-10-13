@@ -61,7 +61,7 @@ public class SystemBlockMod implements ModInitializer {
                 BlockEntity be = context.player().level().getBlockEntity(payload.pos());
                 if (be instanceof SystemBlockEntity systemBlockEntity) {
                     if (payload.executeDirect()) {
-                        systemBlockEntity.sendInputToProcess(payload.input());
+                        systemBlockEntity.sendInputToProcess(payload.input(), true);
                     } else {
                         systemBlockEntity.setCommand(payload.input());
                         LOGGER.info("[SystemBlock] Saved command at " + payload.pos() + " by " + context.player().getName().getString());

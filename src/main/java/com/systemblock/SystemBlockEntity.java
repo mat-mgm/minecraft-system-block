@@ -123,12 +123,20 @@ public class SystemBlockEntity extends BlockEntity {
     }
 
     public synchronized void sendInputToProcess(String input) {
+        sendInputToProcess(input, false);
+    }
+
+    public synchronized void sendInputToProcess(String input, boolean raw) {
         if (isProcessRunning() && processStdin != null) {
             try {
                 processStdin.write(input);
-                processStdin.newLine();
+                if (!raw && !input.endsWith("\n")) {
+                    processStdin.newLine();
+                }
                 processStdin.flush();
-                appendLog("> " + input);
+                if (!raw) {
+                    appendLog("> " + input);
+                }
             } catch (IOException e) {
                 appendLog("[Error writing to stdin: " + e.getMessage() + "]");
             }

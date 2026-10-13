@@ -77,15 +77,16 @@ You hold godlike power over the host operating system. A single repeater delay c
 
 ---
 
-## Autonomous Terminal AI Agents & Redstone Signals
+## Terminal Mode & Autonomous AI Agents
 
 The System Block natively supports running autonomous terminal AI coding assistants like **Claude Code**, **OpenCode**, and **Antigravity CLI** directly inside the block GUI with an authentic 80x24 VT100/ANSI screen grid.
 
-### 1. Live TUI Rendering
-Switch to **Live TUI Agent** mode:
+### 1. Terminal Mode
+Switch to **Terminal** mode:
+- Direct terminal experience: input and output are rendered directly within the main window, with no separate run button or input clutter.
+- Click into the terminal window to focus and send live keystrokes, letters, Backspace, Tab, Enter, and Arrow Keys straight to the host process.
 - Renders authentic 16-color ANSI output, status panels, spinners, and markdown formatting.
-- Supports Arrow Keys, Tab, and Enter for interactive prompts and menu navigation.
-- Terminal environment (`TERM=xterm-256color`, `COLUMNS=80`, `LINES=24`) is pre-configured.
+- Pre-configured terminal environment (`TERM=xterm-256color`, `COLUMNS=80`, `LINES=24`).
 
 ### 2. How AI Agents Control Redstone (`mc-signal`)
 Every running session automatically receives the `mc-signal` utility in its `$PATH` and exposes the `$MC_SIGNAL_PIPE` IPC channel. When an agent completes a task, runs tests, or detects an alert, it can trigger the physical Minecraft world via bash:
@@ -162,7 +163,7 @@ Before inviting host shell commands into your game loop, confirm your environmen
 ### Phase 2: Procuring the Artifact
 Download the latest pre-compiled binary straight from the laboratory dispensary:
 - **Direct Release**: [`release/minecraft-system-block-1.0.0.jar`](release/minecraft-system-block-1.0.0.jar)
-- **SHA-256 Digest**: `4f9024aa10d3568e15ea1f40379525e485dc2f1e24daaad5c896c376d11911f1`
+- **SHA-256 Digest**: `0c70fc27a4e2f6c05942a133abea5bc4a95d7997a577a7749527b5940b366b54`
 
 ### Phase 3: Deployment Topology
 

@@ -20,9 +20,7 @@ public class SystemBlockScreen extends Screen {
     private final SystemBlockEntity blockEntity;
     private final BlockPos blockPos;
 
-    private String currentMode; // "COMMAND" or "TERMINAL" (Live TUI)
-    private boolean pulseOnSuccess;
-
+    private String currentMode; // "COMMAND" or "TERMINAL"
     private final StringBuilder liveLogs = new StringBuilder();
     private final TerminalGrid terminalGrid = new TerminalGrid();
 
@@ -32,7 +30,6 @@ public class SystemBlockScreen extends Screen {
     private Button startRestartButton;
     private Button sigintButton;
     private Button clearButton;
-    private Button pulseToggleButton;
     private Button modeToggleButton;
     private Button doneButton;
 
@@ -47,7 +44,6 @@ public class SystemBlockScreen extends Screen {
         this.blockEntity = blockEntity;
         this.blockPos = blockEntity.getBlockPos();
         this.currentMode = blockEntity.getMode();
-        this.pulseOnSuccess = blockEntity.isPulseOnSuccess();
         String initial = blockEntity.getAllLogs();
         this.liveLogs.append(initial);
         this.terminalGrid.write(initial);
@@ -76,30 +72,30 @@ public class SystemBlockScreen extends Screen {
         this.startX = centerX - inputWidth / 2;
 
         this.terminalY = 24;
-        int totalBottomReserved = 68; // 24 (input) + 4 + 20 (row 1 btns) + 4 + 20 (row 2 btns)
+        int totalBottomReserved = 32; // Single row of bottom buttons (20px) + margins
         this.terminalHeight = Math.max(70, this.height - terminalY - totalBottomReserved - 10);
 
-        // Row 1: Console View (for Command mode)
+        // Row 1: Console View (for Single Command mode)
         this.consoleView = MultiLineEditBox.builder()
                 .setX(startX)
                 .setY(terminalY)
                 .setTextColor(0xFF00FF88) // Matrix / Emerald green
-                .setShowDecorations(false) // Clean frame without character counter
+                .setShowDecorations(false)
                 .build(this.font, inputWidth, terminalHeight, Component.literal("Console"));
         this.consoleView.setValue(this.liveLogs.toString());
         this.consoleView.visible = "COMMAND".equals(currentMode);
         this.addRenderableWidget(this.consoleView);
 
-        // Row 2: Command / Stdin Input box
-        int inputY = terminalY + terminalHeight + 6;
+        // Single Command Mode: Optional input box for the script/command
+        int inputY = terminalY + terminalHeight - 24;
         int runBtnWidth = 46;
         int cmdInputWidth = inputWidth - runBtnWidth - 4;
 
         this.commandInput = new EditBox(this.font, startX, inputY, cmdInputWidth, 20, Component.literal("Command"));
         this.commandInput.setMaxLength(4096);
         this.commandInput.setValue(this.blockEntity.getCommand());
+        this.commandInput.visible = "COMMAND".equals(currentMode);
         this.addRenderableWidget(this.commandInput);
-        this.setInitialFocus(this.commandInput);
 
         this.startRestartButton = this.addRenderableWidget(Button.builder(
                 Component.literal("▶ Run"),
@@ -108,59 +104,58 @@ public class SystemBlockScreen extends Screen {
                     ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "START"));
                 }
         ).bounds(startX + cmdInputWidth + 4, inputY, runBtnWidth, 20).build());
+        this.startRestartButton.visible = "COMMAND".equals(currentMode);
 
-        // Row 3: Utility & Setting toggles
-        int row1Y = inputY + 24;
-        int halfWidth = (inputWidth - 4) / 2;
+        // Bottom Line: [ Mode ] [ ⏹ Stop ] [ Clear Logs ] [ Done ]
+        int bottomY = this.height - 28;
+        int gap = 4;
+        int btnWidth = (inputWidth - (gap * 3)) / 4;
 
-        this.pulseToggleButton = this.addRenderableWidget(Button.builder(
-                Component.literal("Redstone Pulse on Exit 0: " + (pulseOnSuccess ? "ON" : "OFF")),
-                button -> {
-                    this.pulseOnSuccess = !this.pulseOnSuccess;
-                    button.setMessage(Component.literal("Redstone Pulse on Exit 0: " + (pulseOnSuccess ? "ON" : "OFF")));
-                    ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "TOGGLE_PULSE"));
-                }
-        ).bounds(startX, row1Y, halfWidth, 20).build());
-
-        // Mode: Live TUI Agent vs Single Command
+        // Mode button
         this.modeToggleButton = this.addRenderableWidget(Button.builder(
-                Component.literal("Mode: " + ("TERMINAL".equals(currentMode) ? "Live TUI Agent" : "Single Command")),
+                Component.literal("Mode: " + ("TERMINAL".equals(currentMode) ? "Terminal" : "Command")),
                 button -> {
                     this.currentMode = "TERMINAL".equals(this.currentMode) ? "COMMAND" : "TERMINAL";
-                    button.setMessage(Component.literal("Mode: " + ("TERMINAL".equals(currentMode) ? "Live TUI Agent" : "Single Command")));
-                    if (this.consoleView != null) {
-                        this.consoleView.visible = "COMMAND".equals(this.currentMode);
-                    }
+                    button.setMessage(Component.literal("Mode: " + ("TERMINAL".equals(currentMode) ? "Terminal" : "Command")));
+                    updateModeVisibility();
                     ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "TOGGLE_MODE"));
                 }
-        ).bounds(startX + halfWidth + 4, row1Y, halfWidth, 20).build());
+        ).bounds(startX, bottomY, btnWidth, 20).build());
 
-        // Row 4: Process controls & Close (Stop, Clear, Done)
-        int row2Y = row1Y + 24;
-        int btnW = (inputWidth - 8) / 3;
-
+        // Stop button
         this.sigintButton = this.addRenderableWidget(Button.builder(
                 Component.literal("⏹ Stop"),
                 button -> ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "INTERRUPT"))
-        ).bounds(startX, row2Y, btnW, 20).build());
+        ).bounds(startX + (btnWidth + gap), bottomY, btnWidth, 20).build());
 
+        // Clear button
         this.clearButton = this.addRenderableWidget(Button.builder(
-                Component.literal("Clear Logs"),
+                Component.literal("Clear"),
                 button -> {
                     this.liveLogs.setLength(0);
                     this.terminalGrid.clear();
                     if (this.consoleView != null) this.consoleView.setValue("");
                     ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "CLEAR"));
                 }
-        ).bounds(startX + btnW + 4, row2Y, btnW, 20).build());
+        ).bounds(startX + (btnWidth + gap) * 2, bottomY, btnWidth, 20).build());
 
+        // Done button
         this.doneButton = this.addRenderableWidget(Button.builder(
                 CommonComponents.GUI_DONE,
                 button -> {
                     saveCommand();
                     onClose();
                 }
-        ).bounds(startX + (btnW + 4) * 2, row2Y, inputWidth - (btnW + 4) * 2, 20).build());
+        ).bounds(startX + (btnWidth + gap) * 3, bottomY, inputWidth - (btnWidth + gap) * 3, 20).build());
+
+        updateModeVisibility();
+    }
+
+    private void updateModeVisibility() {
+        boolean isCmd = "COMMAND".equals(currentMode);
+        if (this.consoleView != null) this.consoleView.visible = isCmd;
+        if (this.commandInput != null) this.commandInput.visible = isCmd;
+        if (this.startRestartButton != null) this.startRestartButton.visible = isCmd;
     }
 
     private void saveCommand() {
@@ -170,43 +165,89 @@ public class SystemBlockScreen extends Screen {
     }
 
     @Override
-    public boolean keyPressed(net.minecraft.client.input.KeyEvent keyEvent) {
-        // In Live TUI mode: allow Arrow Keys, Tab, and Enter to navigate agent TUIs
-        if ("TERMINAL".equals(currentMode) && this.blockEntity.isProcessRunning()) {
-            if (keyEvent.key() == 265) { // Up Arrow
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[A", true));
-                return true;
-            } else if (keyEvent.key() == 264) { // Down Arrow
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[B", true));
-                return true;
-            } else if (keyEvent.key() == 262) { // Right Arrow
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[C", true));
-                return true;
-            } else if (keyEvent.key() == 263) { // Left Arrow
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[D", true));
-                return true;
-            } else if (keyEvent.key() == 258) { // Tab
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\t", true));
-                return true;
-            }
-        }
-
-        if (keyEvent.key() == 257 || keyEvent.key() == 335) { // GLFW Enter / KP Enter
-            if (this.commandInput.isFocused()) {
-                String cmd = this.commandInput.getValue();
-                if (!cmd.isEmpty()) {
-                    saveCommand();
-                    if ("TERMINAL".equals(currentMode) && this.blockEntity.isProcessRunning()) {
-                        ClientPlayNetworking.send(new TerminalInputPayload(blockPos, cmd, true));
-                        this.commandInput.setValue("");
-                    } else {
-                        ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "START"));
-                    }
+    public boolean charTyped(net.minecraft.client.input.CharacterEvent event) {
+        if ("TERMINAL".equals(currentMode)) {
+            // Forward typed character directly to the running session or command buffer
+            if (this.blockEntity.isProcessRunning()) {
+                String str = event.codepointAsString();
+                if (str != null && !str.isEmpty()) {
+                    ClientPlayNetworking.send(new TerminalInputPayload(blockPos, str, true));
                     return true;
                 }
             }
         }
+        return super.charTyped(event);
+    }
+
+    @Override
+    public boolean keyPressed(net.minecraft.client.input.KeyEvent keyEvent) {
+        int key = keyEvent.key();
+
+        // In Terminal mode: handle direct terminal input and keys
+        if ("TERMINAL".equals(currentMode)) {
+            if (this.blockEntity.isProcessRunning()) {
+                if (key == 265) { // Up Arrow
+                    ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[A", true));
+                    return true;
+                } else if (key == 264) { // Down Arrow
+                    ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[B", true));
+                    return true;
+                } else if (key == 262) { // Right Arrow
+                    ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[C", true));
+                    return true;
+                } else if (key == 263) { // Left Arrow
+                    ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[D", true));
+                    return true;
+                } else if (key == 258) { // Tab
+                    ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\t", true));
+                    return true;
+                } else if (key == 259) { // Backspace
+                    ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\b", true));
+                    return true;
+                } else if (key == 257 || key == 335) { // Enter / Keypad Enter
+                    ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\n", true));
+                    return true;
+                } else if (key == 256) { // Escape
+                    ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033", true));
+                    return true;
+                }
+            } else {
+                // If not running, pressing Enter starts the default session
+                if (key == 257 || key == 335) {
+                    ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "START"));
+                    return true;
+                }
+            }
+        }
+
+        // Single Command mode input handling
+        if ("COMMAND".equals(currentMode)) {
+            if (key == 257 || key == 335) {
+                if (this.commandInput != null && this.commandInput.isFocused()) {
+                    String cmd = this.commandInput.getValue();
+                    if (!cmd.isEmpty()) {
+                        saveCommand();
+                        ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "START"));
+                        return true;
+                    }
+                }
+            }
+        }
         return super.keyPressed(keyEvent);
+    }
+
+    @Override
+    public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean bl) {
+        if ("TERMINAL".equals(currentMode)) {
+            double mx = event.x();
+            double my = event.y();
+            if (mx >= startX && mx <= startX + inputWidth && my >= terminalY && my <= terminalY + terminalHeight) {
+                // Click inside terminal screen: focus the terminal
+                this.setFocused(null);
+                return true;
+            }
+        }
+        return super.mouseClicked(event, bl);
     }
 
     @Override
