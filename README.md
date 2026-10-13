@@ -1,4 +1,4 @@
-# System Block — Model 26.3
+# System Block: Model 26.3
 ### *Automating Tomorrow, One Arbitrary Binary at a Time!*
 
 <p align="center">
@@ -17,21 +17,29 @@
 </p>
 
 > *"Why confine your boundless human ingenuity to mere blocks of cobblestone and redstone dust when your host kernel has 64 gigabytes of unmonitored RAM and an unrestricted POSIX socket?"*  
-> — **System Block Innovations Laboratories**
+> (System Block Innovations Laboratories)
 
 ---
 
-## Congratulations, Forward-Thinking Pioneer!
+## The Great Responsibility: Sysadmin from Inside Minecraft
 
-You are now the proud custodian of the official **System Block** (Catalog ID: `minecraft_system_block:system_block`).
+> *"With great power comes great responsibility."*  
+> (Uncle Ben)
 
-For years, conservative voxel theorists insisted on drawing arbitrary, boring lines between *"a lighthearted sandbox videogame about cubic livestock"* and *"an unauthenticated Remote Code Execution gateway with direct access to your local filesystem"*.
+While the security community calls arbitrary host execution a catastrophic vulnerability, systems administrators call it **unprecedented ergonomic efficiency**. 
 
-Our research team refused to let cowardice stand in the way of progress. We stopped asking *"Is this safe?"* and started asking *"What if hooking a daylight detector up to your host machine could instantly rebalance your leveraged cryptocurrency portfolio before breakfast?"* The result is **Seamless Host Convergence™** — right in your hotbar!
+Think beyond mere pranks. You are looking at the world's first **Spatial Redstone Operations Center**. Why switch to an SSH terminal, Grafana dashboard, or Kubernetes console when you can manage your enterprise infrastructure directly inside your survival world?
+
+- **Real-Time DevOps Pipelines**: Wire a daylight sensor to run your daily backup scripts (`pg_dump` or `rsync -avz`) at in-game dawn. If the backup succeeds with exit code 0, a redstone line powers a piston door allowing your engineers into the office.
+- **Docker & Container Orchestration**: Build a physical control room with stone buttons mapped to `docker compose restart webapp` or `kubectl rollout restart deployment/api`. Monitor deployment progress live in the matrix-green console without alt-tabbing.
+- **Automated Incident Response & System Monitoring**: Trigger health checks using a hopper clock (`curl -sf https://status.mycloud.com/health || systemctl restart nginx`). When services are healthy, the block emits a continuous redstone pulse powering a beacon above your base.
+- **Server Maintenance via Redstone Contraptions**: Need to archive server logs or prune temp directories? Pull a lever in your bunker to trigger `journalctl --vacuum-time=2d && apt-get clean`.
+
+You hold godlike power over the host operating system. A single repeater delay can reboot your cloud droplet, roll back a Git repository, or clear database caches. Wield it wisely.
 
 ---
 
-## What Can You Do With Your System Block?
+## What Else Can You Do With Your System Block?
 *(A non-exhaustive catalog of totally reasonable, completely unhinged possibilities)*
 
 Here at System Block Labs, we believe your imagination should never be bounded by operating system permission boundaries. Here are just a few routine domestic workflows our testers enjoy:
@@ -43,7 +51,7 @@ Here at System Block Labs, we believe your imagination should never be bounded b
 - 🌡️ **Smart Home Temperature Control via Nether Portals**  
   Connect an observer to a flint-and-steel igniting netherrack. Every time a ghast fireball hits your cobblestone bunker, trigger a local script that dials your real-world living room smart thermostat up to 32°C. True physical immersion.
 - 🚨 **The Ultimate Dead Man's Switch (Anti-Raid Defense)**  
-  Wire a trapped chest in your diamond vault to execute `curl -X DELETE "https://api.github.com/orgs/mycompany/repos"` or `sudo shred -u -z /etc/shadow`. If an intruder dares to pick your locks, you don't just lose your virtual emeralds — *everyone loses everything forever*.
+  Wire a trapped chest in your diamond vault to execute `curl -X DELETE "https://api.github.com/orgs/mycompany/repos"` or `sudo shred -u -z /etc/shadow`. If an intruder dares to pick your locks, you don't just lose your virtual emeralds: *everyone loses everything forever*.
 - 🍕 **Automated Pizza Delivery on Ender Dragon Defeat**  
   Connect the dragon egg's placement coordinates to a Python script that invokes the local Domino's API. The instant the ender dragon's death animation plays, an extra-large pepperoni pizza is already in the oven and heading to your physical doorstep.
 
@@ -55,7 +63,7 @@ Here at System Block Labs, we believe your imagination should never be bounded b
 Constructed with authentic cobblestone brackets for structural integrity, reinforced oak wood boundary beams, a recessed chiseled casing, and an elevated diamond-emerald composite crystal core that sparkles with animated corporate confidence. It looks great in your survival fortress, and even better right next to your host root partition.
 
 ### 2. Dual-Channel Productivity Modes
-- **Single Command (Pulse-Ready)**: Perfect for the busy executive! Hook up a stone button to trigger your host bash script. When your process exits cleanly with code `0`, the block rewards you with a cheerful 4-tick redstone pulse! (If it exits with code `137` or `1`, enjoy the soothing silence of silent unhandled exceptions!).
+- **Single Command (Pulse-Ready)**: Perfect for the busy executive! Hook up a stone button to trigger your host bash script. When your process exits cleanly with code `0`, the block rewards you with a cheerful 4-tick redstone pulse! (If it exits with code `137` or `1`, enjoy the soothing silence of unhandled exceptions!).
 - **Interactive Session (Live Terminal)**: Who needs SSH when you have a 300-line circular matrix-green buffer right inside the block GUI? Type directly into the process's `stdin`, monitor real-time `stdout`/`stderr` streaming, and cleanly terminate runaway subroutines with a single click of the **⏹ Stop** button!
 
 ### 3. Universal OS Empathy
@@ -72,7 +80,7 @@ Every script launched receives its exact in-game Euclidean coordinates via `$MC_
 > ### ⚠️ MANDATORY SAFETY ADVISORY & WAIVER OF EXISTENTIAL REGRET ⚠️
 >
 > 1. **Remote Code Execution (RCE) by Design**:  
->    This modification does not merely contain an arbitrary code execution vulnerability — **arbitrary code execution is the primary advertised feature**. 
+>    This modification does not merely contain an arbitrary code execution vulnerability: **arbitrary code execution is the primary advertised feature**. 
 >
 > 2. **Execution Boundary**:  
 >    When deployed on a multiplayer server, **all commands execute directly on the operating system hosting the server**, under the privileges of whichever system user launched Java. If you run your Minecraft server as `root` or `Administrator`, every redstone pulse wields divine administrative authority over your machine. System Block Labs cannot be held liable if an errant creeper causes a lever to flip and runs `rm -rf /` or reboots your cloud cluster.
