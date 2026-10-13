@@ -85,7 +85,7 @@ public class SystemBlockEntity extends BlockEntity {
     public synchronized String getAllLogs() {
         StringBuilder sb = new StringBuilder();
         for (String line : logBuffer) {
-            sb.append(line).append("\n");
+            sb.append(line);
         }
         return sb.toString();
     }
@@ -102,7 +102,7 @@ public class SystemBlockEntity extends BlockEntity {
 
         // Broadcast delta to any nearby players or viewers
         if (this.level instanceof ServerLevel serverLevel) {
-            TerminalOutputPayload payload = new TerminalOutputPayload(this.worldPosition, line + "\n", true);
+            TerminalOutputPayload payload = new TerminalOutputPayload(this.worldPosition, line, true);
             for (ServerPlayer player : serverLevel.players()) {
                 if (player.distanceToSqr(worldPosition.getX(), worldPosition.getY(), worldPosition.getZ()) < 1024) {
                     ServerPlayNetworking.send(player, payload);
@@ -136,39 +136,50 @@ public class SystemBlockEntity extends BlockEntity {
                 } else {
                     processStdinStream.write((input.endsWith("\n") ? input : input + "\n").getBytes(StandardCharsets.UTF_8));
                     processStdinStream.flush();
-                    appendLog("> " + input);
+                    appendLog("> " + input + "\n");
                 }
             } catch (IOException e) {
-                appendLog("[Error writing to stdin: " + e.getMessage() + "]");
+                appendLog("[Error writing to stdin: " + e.getMessage() + "]\n");
             }
         } else {
-            // Not currently running, start process with this command if requested
-            appendLog("> " + input);
-            startProcess(input);
+            if (raw) {
+                startProcess(null);
+                if (processStdinStream != null) {
+                    try {
+                        processStdinStream.write(input.getBytes(StandardCharsets.UTF_8));
+                        processStdinStream.flush();
+                    } catch (IOException ignored) {}
+                }
+            } else {
+                appendLog("> " + input + "\n");
+                startProcess(input);
+            }
         }
     }
 
     public synchronized void interruptProcess() {
         if (isProcessRunning()) {
-            appendLog("[Sending SIGINT / terminating process...]");
+            appendLog("[Sending SIGINT / terminating process...]\n");
             activeProcess.destroy(); // SIGTERM / destroy
         } else {
-            appendLog("[No active process to interrupt]");
+            appendLog("[No active process to interrupt]\n");
         }
     }
 
     public synchronized void killProcess() {
         if (isProcessRunning()) {
-            appendLog("[Killing process (SIGKILL)...]");
+            appendLog("[Killing process (SIGKILL)...]\n");
             activeProcess.destroyForcibly();
         } else {
-            appendLog("[No active process to kill]");
+            appendLog("[No active process to kill]\n");
         }
     }
 
     public synchronized void startProcess(String cmdToRun) {
         if (isProcessRunning()) {
-            appendLog("[Notice: A process is already running. Interrupt or wait before starting a new one]");
+            if (cmdToRun != null && !cmdToRun.isEmpty()) {
+                appendLog("[Notice: A process is already running. Interrupt or wait before starting a new one]\n");
+            }
             return;
         }
 
@@ -182,12 +193,12 @@ public class SystemBlockEntity extends BlockEntity {
 
         final String targetCmd = rawCmd;
         if (targetCmd.isEmpty()) {
-            appendLog("[No command configured to execute]");
+            appendLog("[No command configured to execute]\n");
             return;
         }
 
         final BlockPos pos = this.worldPosition;
-        appendLog("[Starting session in ~ at " + pos.getX() + "," + pos.getY() + "," + pos.getZ() + ": " + targetCmd + "]");
+        appendLog("[Starting session in ~ at " + pos.getX() + "," + pos.getY() + "," + pos.getZ() + ": " + targetCmd + "]\n");
 
         if (this.level instanceof ServerLevel sLevel) {
             this.ipcManager.start(sLevel);
@@ -234,6 +245,30 @@ public class SystemBlockEntity extends BlockEntity {
                     pb.environment().put("TERM", "xterm-256color");
                     pb.environment().put("COLUMNS", "80");
                     pb.environment().put("LINES", "24");
+
+                    // Set default shell
+                    String envShell = System.getenv("SHELL");
+                    if (envShell == null || envShell.isEmpty() || !new File(envShell).exists()) {
+                        String[] shellCandidates = new String[] {
+                                "/run/current-system/sw/bin/zsh",
+                                "/run/current-system/sw/bin/bash",
+                                "/bin/zsh",
+                                "/bin/bash",
+                                "/usr/bin/zsh",
+                                "/usr/bin/bash",
+                                "/run/current-system/sw/bin/sh",
+                                "/bin/sh",
+                                "/usr/bin/sh"
+                        };
+                        for (String cand : shellCandidates) {
+                            if (new File(cand).exists()) {
+                                envShell = cand;
+                                break;
+                            }
+                        }
+                    }
+                    if (envShell == null || envShell.isEmpty()) envShell = "/bin/sh";
+                    pb.environment().put("SHELL", envShell);
                 }
 
                 pb.directory(homeDir);
@@ -326,13 +361,23 @@ public class SystemBlockEntity extends BlockEntity {
                     + "      sys.stdout.buffer.write(d); sys.stdout.buffer.flush()\n"
                     + "    except OSError: break\n";
 
-            File pyBin = new File("/etc/profiles/per-user/rs/bin/python3");
-            if (pyBin.exists() && pyBin.canExecute()) {
-                return new String[] { pyBin.getAbsolutePath(), "-c", pyScript };
-            }
-            pyBin = new File("/usr/bin/python3");
-            if (pyBin.exists() && pyBin.canExecute()) {
-                return new String[] { pyBin.getAbsolutePath(), "-c", pyScript };
+            String[] pythonCandidates = new String[] {
+                    "/etc/profiles/per-user/rs/bin/python3",
+                    "/run/current-system/sw/bin/python3",
+                    "/usr/bin/python3",
+                    "/usr/local/bin/python3",
+                    "/opt/homebrew/bin/python3",
+                    "python3"
+            };
+            for (String py : pythonCandidates) {
+                if (py.startsWith("/")) {
+                    File f = new File(py);
+                    if (f.exists() && f.canExecute()) {
+                        return new String[] { py, "-c", pyScript };
+                    }
+                } else {
+                    return new String[] { py, "-c", pyScript };
+                }
             }
             return new String[] { "python3", "-c", pyScript };
         }

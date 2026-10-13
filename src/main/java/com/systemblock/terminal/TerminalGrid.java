@@ -183,7 +183,8 @@ public class TerminalGrid {
 
     private void handleCsi(char cmd, String params) {
         String[] parts = params.split(";");
-        int p1 = (parts.length > 0 && !parts[0].isEmpty()) ? parseSafe(parts[0], 1) : 1;
+        int defP = (cmd == 'K' || cmd == 'J' || cmd == 'm') ? 0 : 1;
+        int p1 = (parts.length > 0 && !parts[0].isEmpty()) ? parseSafe(parts[0], defP) : defP;
         int p2 = (parts.length > 1 && !parts[1].isEmpty()) ? parseSafe(parts[1], 1) : 1;
 
         switch (cmd) {
@@ -278,7 +279,7 @@ public class TerminalGrid {
             } else if (code == 38 && i + 2 < parts.length && "5".equals(parts[i + 1])) {
                 // 256 colors: 38;5;<color>
                 int c256 = parseSafe(parts[i + 2], 7);
-                if (c256 < 16) currentFg = ANSI_PALETTE[c256];
+                currentFg = get256Color(c256);
                 i += 2;
             } else if (code == 38 && i + 4 < parts.length && "2".equals(parts[i + 1])) {
                 // 24-bit RGB TrueColor: 38;2;r;g;b
@@ -289,7 +290,7 @@ public class TerminalGrid {
                 i += 4;
             } else if (code == 48 && i + 2 < parts.length && "5".equals(parts[i + 1])) {
                 int c256 = parseSafe(parts[i + 2], 0);
-                if (c256 < 16) currentBg = ANSI_PALETTE[c256];
+                currentBg = get256Color(c256);
                 i += 2;
             } else if (code == 48 && i + 4 < parts.length && "2".equals(parts[i + 1])) {
                 // 24-bit RGB TrueColor: 48;2;r;g;b
@@ -300,6 +301,23 @@ public class TerminalGrid {
                 i += 4;
             }
         }
+    }
+
+    public static int get256Color(int c) {
+        if (c < 0) return DEFAULT_FG;
+        if (c < 16) return ANSI_PALETTE[c];
+        if (c <= 231) {
+            int n = c - 16;
+            int r = (n / 36) * 51;
+            int g = ((n % 36) / 6) * 51;
+            int b = (n % 6) * 51;
+            return 0xFF000000 | (r << 16) | (g << 8) | b;
+        }
+        if (c <= 255) {
+            int gray = 8 + (c - 232) * 10;
+            return 0xFF000000 | (gray << 16) | (gray << 8) | gray;
+        }
+        return DEFAULT_FG;
     }
 
     private int parseSafe(String s, int fallback) {

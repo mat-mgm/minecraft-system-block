@@ -123,6 +123,9 @@ public class SystemBlockScreen extends Screen {
                     button.setMessage(Component.literal("Mode: " + ("TERMINAL".equals(currentMode) ? "Terminal" : "Command")));
                     updateModeVisibility();
                     ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "TOGGLE_MODE"));
+                    if ("TERMINAL".equals(this.currentMode)) {
+                        ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "START"));
+                    }
                 }
         ).bounds(startX, bottomY, btnWidth, 20).build());
 
@@ -154,6 +157,11 @@ public class SystemBlockScreen extends Screen {
 
         updateModeVisibility();
 
+        // If in Terminal mode, ensure server starts/connects to the interactive host shell
+        if ("TERMINAL".equals(currentMode)) {
+            ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "START"));
+        }
+
         // Ensure keyboard focus defaults to command input bar when entering Command mode
         if ("COMMAND".equals(currentMode)) {
             this.setInitialFocus(this.commandInput);
@@ -184,13 +192,10 @@ public class SystemBlockScreen extends Screen {
     @Override
     public boolean charTyped(net.minecraft.client.input.CharacterEvent event) {
         if ("TERMINAL".equals(currentMode)) {
-            // Forward typed character directly to the running session or command buffer
-            if (this.blockEntity.isProcessRunning()) {
-                String str = event.codepointAsString();
-                if (str != null && !str.isEmpty()) {
-                    ClientPlayNetworking.send(new TerminalInputPayload(blockPos, str, true));
-                    return true;
-                }
+            String str = event.codepointAsString();
+            if (str != null && !str.isEmpty()) {
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, str, true));
+                return true;
             }
         }
         return super.charTyped(event);
@@ -202,39 +207,69 @@ public class SystemBlockScreen extends Screen {
 
         // In Terminal mode: handle direct terminal input and keys
         if ("TERMINAL".equals(currentMode)) {
-            if (this.blockEntity.isProcessRunning()) {
-                if (key == 265) { // Up Arrow
-                    ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[A", true));
-                    return true;
-                } else if (key == 264) { // Down Arrow
-                    ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[B", true));
-                    return true;
-                } else if (key == 262) { // Right Arrow
-                    ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[C", true));
-                    return true;
-                } else if (key == 263) { // Left Arrow
-                    ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[D", true));
-                    return true;
-                } else if (key == 258) { // Tab
-                    ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\t", true));
-                    return true;
-                } else if (key == 259) { // Backspace
-                    ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\b", true));
-                    return true;
-                } else if (key == 257 || key == 335) { // Enter / Keypad Enter
-                    ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\n", true));
-                    return true;
-                } else if (key == 256) { // Escape
-                    ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033", true));
-                    return true;
-                }
-            } else {
-                // If not running, pressing Enter starts the default session
-                if (key == 257 || key == 335) {
-                    ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "START"));
-                    return true;
-                }
+            if (keyEvent.isEscape() || key == 256) { // Escape: exit GUI
+                this.onClose();
+                return true;
             }
+
+            // Clipboard paste (Ctrl+V)
+            if (keyEvent.isPaste() || (keyEvent.hasControlDown() && key == 86)) {
+                if (this.minecraft != null) {
+                    String clip = this.minecraft.keyboardHandler.getClipboard();
+                    if (clip != null && !clip.isEmpty()) {
+                        ClientPlayNetworking.send(new TerminalInputPayload(blockPos, clip, true));
+                    }
+                }
+                return true;
+            }
+
+            // Ctrl+[A-Z] combinations
+            if (keyEvent.hasControlDown() && key >= 65 && key <= 90) {
+                char ctrlChar = (char) (key - 64);
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, String.valueOf(ctrlChar), true));
+                return true;
+            }
+
+            if (key == 265) { // Up Arrow
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[A", true));
+                return true;
+            } else if (key == 264) { // Down Arrow
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[B", true));
+                return true;
+            } else if (key == 262) { // Right Arrow
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[C", true));
+                return true;
+            } else if (key == 263) { // Left Arrow
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[D", true));
+                return true;
+            } else if (key == 258) { // Tab
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\t", true));
+                return true;
+            } else if (key == 259) { // Backspace (ASCII 127 DEL)
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\u007F", true));
+                return true;
+            } else if (key == 261) { // Delete
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[3~", true));
+                return true;
+            } else if (key == 268) { // Home
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[H", true));
+                return true;
+            } else if (key == 269) { // End
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[F", true));
+                return true;
+            } else if (key == 266) { // Page Up
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[5~", true));
+                return true;
+            } else if (key == 267) { // Page Down
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[6~", true));
+                return true;
+            } else if (key == 257 || key == 335) { // Enter / Keypad Enter
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\r", true));
+                return true;
+            }
+
+            // Consume all other keys to prevent Minecraft inventory key from closing the screen
+            return true;
         }
 
         // Single Command mode input handling
@@ -295,8 +330,12 @@ public class SystemBlockScreen extends Screen {
         int lineHeight = this.font.lineHeight; // 9
         int maxVisibleRows = Math.min(TerminalGrid.ROWS, Math.max(1, bgH / lineHeight));
 
-        // Display the bottom-most rows up to maxVisibleRows
-        int startRow = Math.max(0, TerminalGrid.ROWS - maxVisibleRows);
+        // Ensure the cursor row is always visible within the rendered window
+        int curY = terminalGrid.getCursorY();
+        int startRow = 0;
+        if (curY >= maxVisibleRows) {
+            startRow = Math.min(TerminalGrid.ROWS - maxVisibleRows, curY - maxVisibleRows + 1);
+        }
 
         for (int r = startRow; r < TerminalGrid.ROWS; r++) {
             int drawY = bgY + (r - startRow) * lineHeight;
@@ -335,9 +374,15 @@ public class SystemBlockScreen extends Screen {
             }
 
             // Blinking cursor
-            if (terminalGrid.isCursorVisible() && r == terminalGrid.getCursorY() && (System.currentTimeMillis() % 1000 < 500)) {
-                int cursorScreenX = bgX + 4 + (terminalGrid.getCursorX() * 5);
-                graphics.fill(cursorScreenX, drawY, cursorScreenX + 5, drawY + lineHeight, 0xFF00FF88);
+            if (terminalGrid.isCursorVisible() && r == curY && (System.currentTimeMillis() % 1000 < 500)) {
+                int cX = terminalGrid.getCursorX();
+                int cursorScreenX = bgX + 4;
+                for (int c = 0; c < cX && c < TerminalGrid.COLS; c++) {
+                    cursorScreenX += this.font.width(String.valueOf(terminalGrid.getChar(r, c)));
+                }
+                char atCursor = (cX >= 0 && cX < TerminalGrid.COLS) ? terminalGrid.getChar(r, cX) : ' ';
+                int cursorW = Math.max(5, this.font.width(String.valueOf(atCursor)));
+                graphics.fill(cursorScreenX, drawY, cursorScreenX + cursorW, drawY + lineHeight, 0xFF00FF88);
             }
         }
     }

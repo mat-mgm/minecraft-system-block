@@ -81,7 +81,16 @@ public class SystemBlockMod implements ModInitializer {
                 BlockEntity be = context.player().level().getBlockEntity(payload.pos());
                 if (be instanceof SystemBlockEntity systemBlockEntity) {
                     switch (payload.action()) {
-                        case "START" -> systemBlockEntity.startProcess(null);
+                        case "START" -> {
+                            if (!systemBlockEntity.isProcessRunning()) {
+                                systemBlockEntity.startProcess(null);
+                            } else {
+                                String currentLogs = systemBlockEntity.getAllLogs();
+                                if (!currentLogs.isEmpty()) {
+                                    ServerPlayNetworking.send(context.player(), new TerminalOutputPayload(payload.pos(), currentLogs, false));
+                                }
+                            }
+                        }
                         case "INTERRUPT" -> systemBlockEntity.interruptProcess();
                         case "KILL" -> systemBlockEntity.killProcess();
                         case "CLEAR" -> systemBlockEntity.clearLogs();
@@ -89,6 +98,9 @@ public class SystemBlockMod implements ModInitializer {
                         case "TOGGLE_MODE" -> {
                             String next = "COMMAND".equals(systemBlockEntity.getMode()) ? "TERMINAL" : "COMMAND";
                             systemBlockEntity.setMode(next);
+                            if ("TERMINAL".equals(next) && !systemBlockEntity.isProcessRunning()) {
+                                systemBlockEntity.startProcess(null);
+                            }
                         }
                     }
                 }
