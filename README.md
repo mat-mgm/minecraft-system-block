@@ -2,7 +2,9 @@
 ### *Automating Tomorrow, One Arbitrary Binary at a Time!*
 
 <p align="center">
-  <img src="assets/system_block_preview.png" alt="System Block" width="220" />
+  <img src="assets/system_block_isometric.png" alt="System Block 3D Isometric View" width="180" />
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="assets/system_block_preview.png" alt="System Block Face" width="180" />
 </p>
 
 <p align="center">
@@ -122,9 +124,9 @@ Download the latest pre-compiled binary straight from the laboratory dispensary:
 
 Fabricated legally at any standard Crafting Table without municipal permits:
 
-| Top Row | Middle Row | Bottom Row |
-| :---: | :---: | :---: |
-| Iron Ingot &nbsp;\|&nbsp; Copper Ingot &nbsp;\|&nbsp; Iron Ingot | Redstone Dust &nbsp;\|&nbsp; **Observer** &nbsp;\|&nbsp; Redstone Dust | Iron Ingot &nbsp;\|&nbsp; Copper Ingot &nbsp;\|&nbsp; Iron Ingot |
+<p align="center">
+  <img src="assets/craft.png" alt="System Block Crafting Recipe" width="340" />
+</p>
 
 ---
 
