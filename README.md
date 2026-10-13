@@ -21,10 +21,48 @@
 
 ---
 
-## The Great Responsibility: Sysadmin from Inside Minecraft
+## What is the System Block?
+
+The **System Block** is a Minecraft Fabric mod (Minecraft 26.3, Java 25) that bridges the boundary between in-game redstone logic and your real-world operating system. It provides a specialized in-game block that executes arbitrary host commands and scripts directly on the computer or server running Minecraft.
+
+### How It Behaves
+- **Redstone In, Execution Out**: Trigger the block with a redstone pulse (buttons, levers, pressure plates, observer clocks, daylight sensors), and it immediately spawns your chosen host command, shell script, or binary.
+- **Bi-Directional Feedback**: When a process finishes with exit code `0`, the block emits a redstone pulse into your game world. For continuous monitoring, scripts can drive variable redstone signal strengths (0 to 15) in real time.
+- **Embedded Terminal GUI**: Right-click the block to inspect streaming `stdout` and `stderr` in a live matrix-green terminal, or toggle into a full interactive 80x24 TUI screen with keyboard navigation.
+- **Spatial Awareness**: Every invoked process inherits the exact in-game Euclidean coordinates of the block via `$MC_POS_X`, `$MC_POS_Y`, and `$MC_POS_Z`.
+
+---
+
+## With Great Power: Bridging Real-World Control and Minecraft
 
 > *"With great power comes great responsibility."*  
 > (Uncle Ben)
+
+In vanilla Minecraft, redstone contraptions are confined to virtual sandboxes: moving blocks, sorting digital chests, and powering iron doors. The System Block dissolves that artificial barrier forever.
+
+By granting redstone circuits direct authority over the host operating system, Minecraft becomes a physical, spatial control surface for the real world. A tripwire hook in a deep dark cave is no longer just a mob trap: it is a trigger wired directly into your local machine, your home network, your cloud infrastructure, or your IoT devices. The boundary between virtual mechanics and physical computation is eliminated.
+
+---
+
+## What Can You Do With Your System Block?
+*(A non-exhaustive catalog of totally reasonable, completely unhinged possibilities)*
+
+Here at System Block Labs, we believe your imagination should never be bounded by operating system permission boundaries. Here are just a few routine domestic workflows our testers enjoy:
+
+- 📈 **High-Frequency Wall Street Trading via Pig Pressure Plates**  
+  Wire a redstone wire from an automated pig spawner directly into your System Block. Whenever an adult pig steps on an oak pressure plate, the block executes `curl -X POST https://api.binance.com/...` with a market buy order for 10x leveraged Solana perpetual futures. When the pig moves off, it shorts Ethereum. Pure algorithmic elegance.
+- 🌐 **Nation-State Cybersecurity Audits from a Minecart**  
+  Why open a terminal emulator when you can ride a powered rail past an array of System Blocks configured with `nmap -sV 192.168.1.0/24`, `sqlmap`, and `hydra`? Automate network penetration testing with a row of hoppers and an observer clock. If your neighbor's router has default admin credentials, a dispenser shoots celebratory fireworks!
+- 🌡️ **Smart Home Temperature Control via Nether Portals**  
+  Connect an observer to a flint-and-steel igniting netherrack. Every time a ghast fireball hits your cobblestone bunker, trigger a local script that dials your real-world living room smart thermostat up to 32°C. True physical immersion.
+- 🚨 **The Ultimate Dead Man's Switch (Anti-Raid Defense)**  
+  Wire a trapped chest in your diamond vault to execute `curl -X DELETE "https://api.github.com/orgs/mycompany/repos"` or `sudo shred -u -z /etc/shadow`. If an intruder dares to pick your locks, you don't just lose your virtual emeralds: *everyone loses everything forever*.
+- 🍕 **Automated Pizza Delivery on Ender Dragon Defeat**  
+  Connect the dragon egg's placement coordinates to a Python script that invokes the local Domino's API. The instant the ender dragon's death animation plays, an extra-large pepperoni pizza is already in the oven and heading to your physical doorstep.
+
+---
+
+## Enterprise Sysadmin & Spatial DevOps
 
 While the security community calls arbitrary host execution a catastrophic vulnerability, systems administrators call it **unprecedented ergonomic efficiency**. 
 
@@ -70,24 +108,6 @@ echo "POWER 15" >> "$MC_SIGNAL_PIPE"
 ```
 
 *Example workflow*: You tell your agent in Minecraft: *"Run the test suite and pulse redstone if green."* The agent invokes tests in bash, and on success runs `mc-signal pulse`, lighting up a beacon in your Minecraft base!
-
----
-
-## What Else Can You Do With Your System Block?
-*(A non-exhaustive catalog of totally reasonable, completely unhinged possibilities)*
-
-Here at System Block Labs, we believe your imagination should never be bounded by operating system permission boundaries. Here are just a few routine domestic workflows our testers enjoy:
-
-- 📈 **High-Frequency Wall Street Trading via Pig Pressure Plates**  
-  Wire a redstone wire from an automated pig spawner directly into your System Block. Whenever an adult pig steps on an oak pressure plate, the block executes `curl -X POST https://api.binance.com/...` with a market buy order for 10x leveraged Solana perpetual futures. When the pig moves off, it shorts Ethereum. Pure algorithmic elegance.
-- 🌐 **Nation-State Cybersecurity Audits from a Minecart**  
-  Why open a terminal emulator when you can ride a powered rail past an array of System Blocks configured with `nmap -sV 192.168.1.0/24`, `sqlmap`, and `hydra`? Automate network penetration testing with a row of hoppers and an observer clock. If your neighbor's router has default admin credentials, a dispenser shoots celebratory fireworks!
-- 🌡️ **Smart Home Temperature Control via Nether Portals**  
-  Connect an observer to a flint-and-steel igniting netherrack. Every time a ghast fireball hits your cobblestone bunker, trigger a local script that dials your real-world living room smart thermostat up to 32°C. True physical immersion.
-- 🚨 **The Ultimate Dead Man's Switch (Anti-Raid Defense)**  
-  Wire a trapped chest in your diamond vault to execute `curl -X DELETE "https://api.github.com/orgs/mycompany/repos"` or `sudo shred -u -z /etc/shadow`. If an intruder dares to pick your locks, you don't just lose your virtual emeralds: *everyone loses everything forever*.
-- 🍕 **Automated Pizza Delivery on Ender Dragon Defeat**  
-  Connect the dragon egg's placement coordinates to a Python script that invokes the local Domino's API. The instant the ender dragon's death animation plays, an extra-large pepperoni pizza is already in the oven and heading to your physical doorstep.
 
 ---
 
