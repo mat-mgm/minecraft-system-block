@@ -107,7 +107,7 @@ Before inviting host shell commands into your game loop, confirm your environmen
 
 ### Phase 2: Procuring the Artifact
 Download the latest pre-compiled binary straight from the laboratory dispensary:
-- 📂 **Direct Release**: [`release/minecraft-system-block-1.0.0.jar`](release/minecraft-system-block-1.0.0.jar)
+- **Direct Release**: [`release/minecraft-system-block-1.0.0.jar`](release/minecraft-system-block-1.0.0.jar)
 - **SHA-256 Digest**: `4f9024aa10d3568e15ea1f40379525e485dc2f1e24daaad5c896c376d11911f1`
 
 ### Phase 3: Deployment Topology
