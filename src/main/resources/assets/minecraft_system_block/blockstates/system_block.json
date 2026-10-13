@@ -1,0 +1,16 @@
+{
+  "variants": {
+    "emitting=false,powered=false": {
+      "model": "minecraft_system_block:block/system_block"
+    },
+    "emitting=false,powered=true": {
+      "model": "minecraft_system_block:block/system_block_active"
+    },
+    "emitting=true,powered=false": {
+      "model": "minecraft_system_block:block/system_block_active"
+    },
+    "emitting=true,powered=true": {
+      "model": "minecraft_system_block:block/system_block_active"
+    }
+  }
+}

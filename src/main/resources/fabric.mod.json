@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "minecraft_system_block",
+  "version": "1.0.0",
+  "name": "System Block",
+  "description": "Adds a System Block executed on the host system via redstone activation for desktop automation.",
+  "authors": [
+    "SystemBlock Contributors"
+  ],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/minecraft_system_block/textures/block/system_block.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.systemblock.SystemBlockMod"
+    ],
+    "client": [
+      "com.systemblock.client.SystemBlockClientMod"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.0",
+    "minecraft": ">=26.0",
+    "java": ">=25"
+  }
+}
