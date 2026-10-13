@@ -163,20 +163,36 @@ public class SystemBlockEntity extends BlockEntity {
         Thread runner = new Thread(() -> {
             try {
                 File homeDir = new File(System.getProperty("user.home"));
-                boolean isWindows = System.getProperty("os.name", "").toLowerCase().contains("win");
+                String osName = System.getProperty("os.name", "").toLowerCase();
+                boolean isWindows = osName.contains("win");
+                boolean isMac = osName.contains("mac") || osName.contains("darwin");
                 ProcessBuilder pb;
 
                 if (isWindows) {
+                    // Windows: support PowerShell or cmd.exe fallback
                     pb = new ProcessBuilder("cmd.exe", "/c", targetCmd);
                 } else {
-                    pb = new ProcessBuilder(buildUnixCommand(targetCmd));
-                    String systemPath = System.getenv("PATH");
-                    if (systemPath == null || !systemPath.contains("/run/current-system/sw/bin")) {
-                        systemPath = (systemPath != null ? systemPath + ":" : "") +
-                                "/run/current-system/sw/bin:/etc/profiles/per-user/" + System.getProperty("user.name") + "/bin:/home/" + System.getProperty("user.name") + "/.nix-profile/bin:/usr/bin:/bin";
+                    // Unix (macOS & Linux)
+                    pb = new ProcessBuilder(buildUnixCommand(targetCmd, isMac));
+                    String currentPath = System.getenv("PATH");
+                    StringBuilder enrichedPath = new StringBuilder();
+                    if (currentPath != null && !currentPath.isEmpty()) {
+                        enrichedPath.append(currentPath).append(":");
                     }
-                    pb.environment().put("PATH", systemPath);
-                    pb.environment().put("USER", System.getProperty("user.name"));
+                    if (isMac) {
+                        // macOS Homebrew (Apple Silicon & Intel), MacPorts, and system paths
+                        enrichedPath.append("/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin");
+                    } else {
+                        // Linux (standard, NixOS profiles, user local bins)
+                        String user = System.getProperty("user.name", "");
+                        enrichedPath.append("/run/current-system/sw/bin:")
+                                .append("/etc/profiles/per-user/").append(user).append("/bin:")
+                                .append(homeDir.getAbsolutePath()).append("/.nix-profile/bin:")
+                                .append(homeDir.getAbsolutePath()).append("/.local/bin:")
+                                .append("/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin");
+                    }
+                    pb.environment().put("PATH", enrichedPath.toString());
+                    pb.environment().put("USER", System.getProperty("user.name", "user"));
                 }
 
                 pb.directory(homeDir);
@@ -229,7 +245,19 @@ public class SystemBlockEntity extends BlockEntity {
         runner.start();
     }
 
-    private static String[] buildUnixCommand(String cmd) {
+    private static String[] buildUnixCommand(String cmd, boolean isMac) {
+        if (isMac) {
+            // macOS prefers /bin/zsh (default on macOS 10.15+) or /bin/bash
+            File zsh = new File("/bin/zsh");
+            if (zsh.exists() && zsh.canExecute()) {
+                return new String[] { "/bin/zsh", "-c", cmd };
+            }
+            File bash = new File("/bin/bash");
+            if (bash.exists() && bash.canExecute()) {
+                return new String[] { "/bin/bash", "-c", cmd };
+            }
+        }
+
         File envBin = new File("/usr/bin/env");
         if (envBin.exists() && envBin.canExecute()) {
             return new String[] { "/usr/bin/env", "bash", "-c", cmd };
@@ -242,6 +270,8 @@ public class SystemBlockEntity extends BlockEntity {
                 "/run/current-system/sw/bin/bash",
                 "/bin/bash",
                 "/usr/bin/bash",
+                "/bin/zsh",
+                "/usr/bin/zsh",
                 "/run/current-system/sw/bin/sh",
                 "/bin/sh",
                 "/usr/bin/sh",

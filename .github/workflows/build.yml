@@ -1,0 +1,45 @@
+name: Build System Block
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    name: Build & Verify Mod Artifact
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "25"
+
+      - name: Verify Pre-compiled Release Artifact
+        run: |
+          echo "Verifying checked-in release artifact..."
+          ls -lh release/minecraft-system-block-*.jar
+          sha256sum release/minecraft-system-block-*.jar
+
+      - name: Upload Mod Jar Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: minecraft-system-block-1.0.0
+          path: release/minecraft-system-block-1.0.0.jar
+          if-no-files-found: error
+
+      - name: Publish GitHub Release (On Tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/minecraft-system-block-1.0.0.jar
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
