@@ -39,6 +39,40 @@ You hold godlike power over the host operating system. A single repeater delay c
 
 ---
 
+## Autonomous Terminal AI Agents & Redstone Signals
+
+The System Block natively supports running autonomous terminal AI coding assistants like **Claude Code**, **OpenCode**, and **Antigravity CLI** directly inside the block GUI with an authentic 80x24 VT100/ANSI screen grid.
+
+### 1. Live TUI Rendering
+Switch to **Live TUI Agent** mode:
+- Renders authentic 16-color ANSI output, status panels, spinners, and markdown formatting.
+- Supports Arrow Keys, Tab, and Enter for interactive prompts and menu navigation.
+- Terminal environment (`TERM=xterm-256color`, `COLUMNS=80`, `LINES=24`) is pre-configured.
+
+### 2. How AI Agents Control Redstone (`mc-signal`)
+Every running session automatically receives the `mc-signal` utility in its `$PATH` and exposes the `$MC_SIGNAL_PIPE` IPC channel. When an agent completes a task, runs tests, or detects an alert, it can trigger the physical Minecraft world via bash:
+
+```bash
+# Emit a 4-tick redstone pulse (like an observer)
+mc-signal pulse
+
+# Set continuous redstone power strength (0 to 15)
+mc-signal power 15
+
+# Turn off continuous signal
+mc-signal power 0
+```
+
+Agents can also write directly to the pipe:
+```bash
+echo "PULSE" >> "$MC_SIGNAL_PIPE"
+echo "POWER 15" >> "$MC_SIGNAL_PIPE"
+```
+
+*Example workflow*: You tell your agent in Minecraft: *"Run the test suite and pulse redstone if green."* The agent invokes tests in bash, and on success runs `mc-signal pulse`, lighting up a beacon in your Minecraft base!
+
+---
+
 ## What Else Can You Do With Your System Block?
 *(A non-exhaustive catalog of totally reasonable, completely unhinged possibilities)*
 

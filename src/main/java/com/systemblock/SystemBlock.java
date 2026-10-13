@@ -58,6 +58,14 @@ public class SystemBlock extends Block implements EntityBlock {
         return state.getValue(EMITTING) ? 15 : 0;
     }
 
+    public static void setSignalPower(ServerLevel level, BlockPos pos, BlockState state, int power) {
+        boolean shouldEmit = power > 0;
+        if (state.getValue(EMITTING) != shouldEmit) {
+            level.setBlock(pos, state.setValue(EMITTING, shouldEmit), Block.UPDATE_ALL);
+            updateNeighbors(level, pos);
+        }
+    }
+
     public static void triggerSuccessPulse(ServerLevel level, BlockPos pos, BlockState state) {
         // Turn on emitting and schedule a tick 4 redstone ticks later to turn it off
         level.setBlock(pos, state.setValue(EMITTING, true), Block.UPDATE_ALL);

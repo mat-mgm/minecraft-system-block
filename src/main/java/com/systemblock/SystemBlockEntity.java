@@ -35,8 +35,20 @@ public class SystemBlockEntity extends BlockEntity {
     private Process activeProcess = null;
     private BufferedWriter processStdin = null;
 
+    // IPC manager for agent redstone signals (mc-signal helper & signal.cmd)
+    private final com.systemblock.ipc.BlockIpcManager ipcManager;
+
     public SystemBlockEntity(BlockPos pos, BlockState state) {
         super(SystemBlockMod.SYSTEM_BLOCK_ENTITY_TYPE, pos, state);
+        this.ipcManager = new com.systemblock.ipc.BlockIpcManager(pos);
+    }
+
+    @Override
+    public void setRemoved() {
+        super.setRemoved();
+        if (ipcManager != null) {
+            ipcManager.stop();
+        }
     }
 
     public synchronized String getCommand() {
@@ -160,6 +172,10 @@ public class SystemBlockEntity extends BlockEntity {
         final BlockPos pos = this.worldPosition;
         appendLog("[Starting session in ~ at " + pos.getX() + "," + pos.getY() + "," + pos.getZ() + ": " + targetCmd + "]");
 
+        if (this.level instanceof ServerLevel sLevel) {
+            this.ipcManager.start(sLevel);
+        }
+
         Thread runner = new Thread(() -> {
             try {
                 File homeDir = new File(System.getProperty("user.home"));
@@ -168,14 +184,19 @@ public class SystemBlockEntity extends BlockEntity {
                 boolean isMac = osName.contains("mac") || osName.contains("darwin");
                 ProcessBuilder pb;
 
+                String ipcBinPath = ipcManager.getIpcDir().getAbsolutePath();
+
                 if (isWindows) {
                     // Windows: support PowerShell or cmd.exe fallback
                     pb = new ProcessBuilder("cmd.exe", "/c", targetCmd);
+                    String sysPath = System.getenv("PATH");
+                    pb.environment().put("PATH", ipcBinPath + (sysPath != null ? ";" + sysPath : ""));
                 } else {
                     // Unix (macOS & Linux)
                     pb = new ProcessBuilder(buildUnixCommand(targetCmd, isMac));
                     String currentPath = System.getenv("PATH");
                     StringBuilder enrichedPath = new StringBuilder();
+                    enrichedPath.append(ipcBinPath).append(":"); // Ensure mc-signal is immediately in PATH
                     if (currentPath != null && !currentPath.isEmpty()) {
                         enrichedPath.append(currentPath).append(":");
                     }
@@ -193,6 +214,9 @@ public class SystemBlockEntity extends BlockEntity {
                     }
                     pb.environment().put("PATH", enrichedPath.toString());
                     pb.environment().put("USER", System.getProperty("user.name", "user"));
+                    pb.environment().put("TERM", "xterm-256color");
+                    pb.environment().put("COLUMNS", "80");
+                    pb.environment().put("LINES", "24");
                 }
 
                 pb.directory(homeDir);
@@ -200,6 +224,7 @@ public class SystemBlockEntity extends BlockEntity {
                 pb.environment().put("MC_POS_X", String.valueOf(pos.getX()));
                 pb.environment().put("MC_POS_Y", String.valueOf(pos.getY()));
                 pb.environment().put("MC_POS_Z", String.valueOf(pos.getZ()));
+                pb.environment().put("MC_SIGNAL_PIPE", ipcManager.getSignalPipeFile().getAbsolutePath());
                 pb.redirectErrorStream(true);
 
                 Process process = pb.start();
