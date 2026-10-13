@@ -2,15 +2,17 @@
   "type": "minecraft:crafting_shaped",
   "category": "redstone",
   "key": {
-    "#": "minecraft:iron_ingot",
+    "C": "minecraft:cobblestone",
+    "E": "minecraft:emerald",
     "R": "minecraft:redstone",
-    "C": "minecraft:copper_ingot",
-    "O": "minecraft:observer"
+    "M": "minecraft:compass",
+    "O": "minecraft:oak_planks",
+    "D": "minecraft:diamond"
   },
   "pattern": [
-    "#C#",
-    "ROR",
-    "#C#"
+    "CEC",
+    "RMR",
+    "ODO"
   ],
   "result": {
     "id": "minecraft_system_block:system_block"
