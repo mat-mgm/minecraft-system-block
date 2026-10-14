@@ -67,6 +67,10 @@ public class SystemBlockScreen extends Screen {
                 this.commandLogs.setLength(0);
             }
             this.commandLogs.append(text);
+            int maxChars = 65536;
+            if (this.commandLogs.length() > maxChars) {
+                this.commandLogs.delete(0, this.commandLogs.length() - maxChars);
+            }
             if (this.consoleView != null) {
                 this.consoleView.setValue(this.commandLogs.toString());
             }
@@ -442,149 +446,160 @@ public class SystemBlockScreen extends Screen {
 
         // Apply matrix sub-scaling for crisp, spacious terminal layout
         graphics.pose().pushMatrix();
-        graphics.pose().translate(bgX + 4, bgY + 3);
-        graphics.pose().scale(fontScale, fontScale);
+        try {
+            graphics.pose().translate(bgX + 4, bgY + 3);
+            graphics.pose().scale(fontScale, fontScale);
 
-        int lineHeight = this.font.lineHeight; // 9
-        float virtualH = (bgH - 6) / fontScale;
-        float virtualW = (bgW - 8) / fontScale;
-        int spaceW = Math.max(1, this.font.width(" "));
+            int lineHeight = this.font.lineHeight; // 9
+            float virtualH = (bgH - 6) / fontScale;
+            float virtualW = (bgW - 8) / fontScale;
+            int spaceW = Math.max(1, this.font.width(" "));
 
-        synchronized (terminalGrid) {
-            int gridCols = terminalGrid.getCols();
-            int gridRows = terminalGrid.getRows();
-            int curY = terminalGrid.getCursorY();
-            int curX = terminalGrid.getCursorX();
-            boolean cursorVisible = terminalGrid.isCursorVisible();
-            boolean showBlinkCursor = cursorVisible && (System.currentTimeMillis() % 1000 < 500);
+            synchronized (terminalGrid) {
+                int gridCols = terminalGrid.getCols();
+                int gridRows = terminalGrid.getRows();
+                int curY = terminalGrid.getCursorY();
+                int curX = terminalGrid.getCursorX();
+                boolean cursorVisible = terminalGrid.isCursorVisible();
+                boolean showBlinkCursor = cursorVisible && (System.currentTimeMillis() % 1000 < 500);
 
-            int maxVisibleRows = Math.min(gridRows, Math.max(1, (int) (virtualH / lineHeight)));
-            int startRow = 0;
-            if (curY >= maxVisibleRows) {
-                startRow = Math.min(gridRows - maxVisibleRows, curY - maxVisibleRows + 1);
-            }
-
-            String[][] cells = terminalGrid.getRawCells();
-            int[][] fgColors = terminalGrid.getRawFg();
-            int[][] bgColors = terminalGrid.getRawBg();
-
-            for (int r = startRow; r < gridRows; r++) {
-                int drawY = (r - startRow) * lineHeight;
-                if (drawY + lineHeight > virtualH) break;
-
-                String[] rowCells = (cells != null && r < cells.length) ? cells[r] : null;
-                int[] rowFg = (fgColors != null && r < fgColors.length) ? fgColors[r] : null;
-                int[] rowBg = (bgColors != null && r < bgColors.length) ? bgColors[r] : null;
-
-                if (rowCells == null || rowFg == null || rowBg == null) continue;
-
-                // Find the last column that has actual visual content (character or background)
-                int lastActiveCol = -1;
-                for (int c = Math.min(gridCols, rowCells.length) - 1; c >= 0; c--) {
-                    int bg = rowBg[c];
-                    String cell = rowCells[c];
-                    if ((bg & 0xFF000000) != 0 || (cell != null && !cell.equals(" "))) {
-                        lastActiveCol = c;
-                        break;
-                    }
+                int maxVisibleRows = Math.min(gridRows, Math.max(1, (int) (virtualH / lineHeight)));
+                int startRow = 0;
+                if (curY >= maxVisibleRows) {
+                    startRow = Math.min(gridRows - maxVisibleRows, curY - maxVisibleRows + 1);
                 }
 
-                boolean isCursorRow = (r == curY && showBlinkCursor && curX >= 0 && curX < gridCols);
+                String[][] cells = terminalGrid.getRawCells();
+                int[][] fgColors = terminalGrid.getRawFg();
+                int[][] bgColors = terminalGrid.getRawBg();
 
-                // If row has no text/background content and no cursor, skip it entirely (0 GPU calls)
-                if (lastActiveCol == -1 && !isCursorRow) {
-                    continue;
-                }
+                for (int r = startRow; r < gridRows; r++) {
+                    int drawY = (r - startRow) * lineHeight;
+                    if (drawY + lineHeight > virtualH) break;
 
-                int renderLimitCol = Math.max(lastActiveCol, isCursorRow ? curX : -1);
+                    String[] rowCells = (cells != null && r < cells.length) ? cells[r] : null;
+                    int[] rowFg = (fgColors != null && r < fgColors.length) ? fgColors[r] : null;
+                    int[] rowBg = (bgColors != null && r < bgColors.length) ? bgColors[r] : null;
 
-                // Pass 1: Contiguous background run batching
-                int currentX = 0;
-                int spanStartX = 0;
-                int currentSpanBg = 0;
+                    if (rowCells == null || rowFg == null || rowBg == null) continue;
 
-                for (int c = 0; c <= renderLimitCol && currentX < virtualW; c++) {
-                    String cell = (c < rowCells.length) ? rowCells[c] : " ";
-                    int cellW = (cell == null || cell.equals(" ")) ? spaceW : Math.max(1, this.font.width(cell));
-                    int bg = (c < rowBg.length) ? rowBg[c] : 0;
-                    boolean hasBg = (bg & 0xFF000000) != 0;
-
-                    if (hasBg) {
-                        if ((currentSpanBg & 0xFF000000) == 0) {
-                            currentSpanBg = bg;
-                            spanStartX = currentX;
-                        } else if (bg != currentSpanBg) {
-                            graphics.fill(spanStartX, drawY, currentX, drawY + lineHeight, currentSpanBg);
-                            currentSpanBg = bg;
-                            spanStartX = currentX;
-                        }
-                    } else {
-                        if ((currentSpanBg & 0xFF000000) != 0) {
-                            graphics.fill(spanStartX, drawY, currentX, drawY + lineHeight, currentSpanBg);
-                            currentSpanBg = 0;
+                    // Find the last column that has actual visual content (character or background)
+                    int lastActiveCol = -1;
+                    for (int c = Math.min(gridCols, rowCells.length) - 1; c >= 0; c--) {
+                        int bg = rowBg[c];
+                        String cell = rowCells[c];
+                        if ((bg & 0xFF000000) != 0 || (cell != null && !cell.equals(" "))) {
+                            lastActiveCol = c;
+                            break;
                         }
                     }
-                    currentX += cellW;
-                }
-                if ((currentSpanBg & 0xFF000000) != 0) {
-                    graphics.fill(spanStartX, drawY, currentX, drawY + lineHeight, currentSpanBg);
-                }
 
-                // Pass 2: Foreground text batching by color
-                currentX = 0;
-                StringBuilder chunkSb = new StringBuilder();
-                int chunkStartX = 0;
-                int currentChunkFg = -1;
-                int cursorVirtualX = -1;
-                int cursorVirtualW = spaceW;
+                    boolean isCursorRow = (r == curY && showBlinkCursor && curX >= 0 && curX < gridCols);
 
-                for (int c = 0; c <= renderLimitCol && currentX < virtualW; c++) {
-                    String cell = (c < rowCells.length) ? rowCells[c] : " ";
-                    int cellW = (cell == null || cell.equals(" ")) ? spaceW : Math.max(1, this.font.width(cell));
-                    int fg = (c < rowFg.length) ? rowFg[c] : TerminalGrid.DEFAULT_FG;
-
-                    if (isCursorRow && c == curX) {
-                        cursorVirtualX = currentX;
-                        cursorVirtualW = Math.max(5, cellW);
+                    // If row has no text/background content and no cursor, skip it entirely (0 GPU calls)
+                    if (lastActiveCol == -1 && !isCursorRow) {
+                        continue;
                     }
 
-                    if (c <= lastActiveCol) {
-                        if (currentChunkFg == -1) {
-                            currentChunkFg = fg;
-                            chunkStartX = currentX;
-                        } else if (fg != currentChunkFg) {
-                            if (chunkSb.length() > 0) {
-                                graphics.text(this.font, chunkSb.toString(), chunkStartX, drawY, currentChunkFg, false);
-                                chunkSb.setLength(0);
+                    int renderLimitCol = Math.max(lastActiveCol, isCursorRow ? curX : -1);
+
+                    // Pass 1: Contiguous background run batching
+                    int currentX = 0;
+                    int spanStartX = 0;
+                    int currentSpanBg = 0;
+
+                    for (int c = 0; c <= renderLimitCol && currentX < virtualW; c++) {
+                        String cell = (c < rowCells.length) ? rowCells[c] : " ";
+                        int cellW = (cell == null || cell.equals(" ")) ? spaceW : Math.max(1, this.font.width(cell));
+                        int bg = (c < rowBg.length) ? rowBg[c] : 0;
+                        boolean hasBg = (bg & 0xFF000000) != 0;
+
+                        if (hasBg) {
+                            if ((currentSpanBg & 0xFF000000) == 0) {
+                                currentSpanBg = bg;
+                                spanStartX = currentX;
+                            } else if (bg != currentSpanBg) {
+                                if (currentX > spanStartX) {
+                                    graphics.fill(spanStartX, drawY, currentX, drawY + lineHeight, currentSpanBg);
+                                }
+                                currentSpanBg = bg;
+                                spanStartX = currentX;
                             }
-                            currentChunkFg = fg;
-                            chunkStartX = currentX;
+                        } else {
+                            if ((currentSpanBg & 0xFF000000) != 0) {
+                                if (currentX > spanStartX) {
+                                    graphics.fill(spanStartX, drawY, currentX, drawY + lineHeight, currentSpanBg);
+                                }
+                                currentSpanBg = 0;
+                            }
                         }
-                        chunkSb.append(cell != null ? cell : " ");
-                    } else {
-                        if (chunkSb.length() > 0) {
-                            graphics.text(this.font, chunkSb.toString(), chunkStartX, drawY, currentChunkFg != -1 ? currentChunkFg : TerminalGrid.DEFAULT_FG, false);
-                            chunkSb.setLength(0);
-                            currentChunkFg = -1;
-                        }
+                        currentX += cellW;
+                    }
+                    if ((currentSpanBg & 0xFF000000) != 0 && currentX > spanStartX) {
+                        graphics.fill(spanStartX, drawY, currentX, drawY + lineHeight, currentSpanBg);
                     }
 
-                    currentX += cellW;
-                }
+                    // Pass 2: Foreground text batching by color
+                    currentX = 0;
+                    StringBuilder chunkSb = new StringBuilder();
+                    int chunkStartX = 0;
+                    int currentChunkFg = -1;
+                    int cursorVirtualX = -1;
+                    int cursorVirtualW = spaceW;
 
-                if (chunkSb.length() > 0) {
-                    graphics.text(this.font, chunkSb.toString(), chunkStartX, drawY, currentChunkFg != -1 ? currentChunkFg : TerminalGrid.DEFAULT_FG, false);
-                }
+                    for (int c = 0; c <= renderLimitCol && currentX < virtualW; c++) {
+                        String cell = (c < rowCells.length) ? rowCells[c] : " ";
+                        int cellW = (cell == null || cell.equals(" ")) ? spaceW : Math.max(1, this.font.width(cell));
+                        int fg = (c < rowFg.length) ? rowFg[c] : TerminalGrid.DEFAULT_FG;
 
-                // Pass 3: Draw cursor if on this row
-                if (isCursorRow && cursorVirtualX != -1 && cursorVirtualX + cursorVirtualW <= virtualW) {
-                    graphics.fill(cursorVirtualX, drawY, cursorVirtualX + cursorVirtualW, drawY + lineHeight, 0xFF00FF88);
+                        if (isCursorRow && c == curX) {
+                            cursorVirtualX = currentX;
+                            cursorVirtualW = Math.max(5, cellW);
+                        }
+
+                        if (c <= lastActiveCol) {
+                            if (currentChunkFg == -1) {
+                                currentChunkFg = fg;
+                                chunkStartX = currentX;
+                            } else if (fg != currentChunkFg) {
+                                if (chunkSb.length() > 0) {
+                                    graphics.text(this.font, chunkSb.toString(), chunkStartX, drawY, currentChunkFg, false);
+                                    chunkSb.setLength(0);
+                                }
+                                currentChunkFg = fg;
+                                chunkStartX = currentX;
+                            }
+                            chunkSb.append(cell != null ? cell : " ");
+                        } else {
+                            if (chunkSb.length() > 0) {
+                                graphics.text(this.font, chunkSb.toString(), chunkStartX, drawY, currentChunkFg != -1 ? currentChunkFg : TerminalGrid.DEFAULT_FG, false);
+                                chunkSb.setLength(0);
+                                currentChunkFg = -1;
+                            }
+                        }
+
+                        currentX += cellW;
+                    }
+
+                    if (chunkSb.length() > 0) {
+                        graphics.text(this.font, chunkSb.toString(), chunkStartX, drawY, currentChunkFg != -1 ? currentChunkFg : TerminalGrid.DEFAULT_FG, false);
+                    }
+
+                    // Pass 3: Draw cursor if on this row
+                    if (isCursorRow && cursorVirtualX != -1 && cursorVirtualX + cursorVirtualW <= virtualW) {
+                        graphics.fill(cursorVirtualX, drawY, cursorVirtualX + cursorVirtualW, drawY + lineHeight, 0xFF00FF88);
+                    }
                 }
             }
+        } finally {
+            graphics.pose().popMatrix();
+            graphics.disableScissor();
         }
+    }
 
-        graphics.pose().popMatrix();
-        graphics.disableScissor();
+    @Override
+    public boolean isPauseScreen() {
+        return false;
     }
 
     @Override

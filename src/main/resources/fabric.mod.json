@@ -19,6 +19,9 @@
       "com.systemblock.client.SystemBlockClientMod"
     ]
   },
+  "mixins": [
+    "minecraft_system_block.mixins.json"
+  ],
   "depends": {
     "fabricloader": ">=0.19.0",
     "minecraft": ">=26.0",

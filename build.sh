@@ -53,7 +53,8 @@ print(":".join(libs))
 ' > "$CP_FILE"
 fi
 
-MC_CP="$(cat "$CP_FILE"):/home/rs/.minecraft/versions/26.3/26.3.jar:/home/rs/.minecraft/libraries/net/fabricmc/fabric-loader/0.19.5/fabric-loader-0.19.5.jar:$API_CACHE"
+MIXIN_JAR="/home/rs/.minecraft/libraries/net/fabricmc/sponge-mixin/0.17.4+mixin.0.8.7/sponge-mixin-0.17.4+mixin.0.8.7.jar"
+MC_CP="$(cat "$CP_FILE"):/home/rs/.minecraft/versions/26.3/26.3.jar:/home/rs/.minecraft/libraries/net/fabricmc/fabric-loader/0.19.5/fabric-loader-0.19.5.jar:$MIXIN_JAR:$API_CACHE"
 
 # 4. Clean & Prepare Build Directory
 rm -rf "$BUILD_DIR"
