@@ -604,6 +604,6 @@ public class SystemBlockScreen extends Screen {
 
     @Override
     public boolean isInGameUi() {
-        return true;
+        return false;
     }
 }
