@@ -189,12 +189,78 @@ public class SystemBlockScreen extends Screen {
         ClientPlayNetworking.send(new TerminalInputPayload(blockPos, cmd, false));
     }
 
+    private long lastKeyTime = 0;
+    private String lastKeyChar = null;
+
+    private static String getCharForKeyEvent(net.minecraft.client.input.KeyEvent event) {
+        int key = event.key();
+        boolean shift = event.hasShiftDown();
+
+        // Letters A-Z
+        if (key >= 65 && key <= 90) {
+            char c = (char) key;
+            return shift ? String.valueOf(c) : String.valueOf(Character.toLowerCase(c));
+        }
+
+        // Numbers 0-9
+        if (key >= 48 && key <= 57) {
+            if (!shift) {
+                return String.valueOf((char) key);
+            } else {
+                return switch (key) {
+                    case 49 -> "!";
+                    case 50 -> "@";
+                    case 51 -> "#";
+                    case 52 -> "$";
+                    case 53 -> "%";
+                    case 54 -> "^";
+                    case 55 -> "&";
+                    case 56 -> "*";
+                    case 57 -> "(";
+                    case 48 -> ")";
+                    default -> "";
+                };
+            }
+        }
+
+        // Numpad 0-9
+        if (key >= 320 && key <= 329) {
+            return String.valueOf((char) ('0' + (key - 320)));
+        }
+
+        // Space
+        if (key == 32) return " ";
+
+        // Standard Symbols
+        return switch (key) {
+            case 45 -> shift ? "_" : "-"; // Minus
+            case 61 -> shift ? "+" : "="; // Equals
+            case 91 -> shift ? "{" : "["; // Left bracket
+            case 93 -> shift ? "}" : "]"; // Right bracket
+            case 59 -> shift ? ":" : ";"; // Semicolon
+            case 39 -> shift ? "\"" : "'"; // Apostrophe
+            case 44 -> shift ? "<" : ","; // Comma
+            case 46 -> shift ? ">" : "."; // Period
+            case 47 -> shift ? "?" : "/"; // Slash
+            case 92 -> shift ? "|" : "\\"; // Backslash
+            case 96 -> shift ? "~" : "`"; // Grave accent
+            case 330 -> "."; // Numpad decimal
+            case 331 -> "/"; // Numpad divide
+            case 332 -> "*"; // Numpad multiply
+            case 333 -> "-"; // Numpad subtract
+            case 334 -> "+"; // Numpad add
+            default -> null;
+        };
+    }
+
     @Override
     public boolean charTyped(net.minecraft.client.input.CharacterEvent event) {
         if ("TERMINAL".equals(currentMode)) {
             String str = event.codepointAsString();
             if (str != null && !str.isEmpty()) {
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, str, true));
+                if (!(str.equals(lastKeyChar) && (System.currentTimeMillis() - lastKeyTime < 80))) {
+                    ClientPlayNetworking.send(new TerminalInputPayload(blockPos, str, true));
+                }
                 return true;
             }
         }
@@ -268,13 +334,21 @@ public class SystemBlockScreen extends Screen {
                 return true;
             }
 
+            // Printable letters, digits, symbols, space
+            String ch = getCharForKeyEvent(keyEvent);
+            if (ch != null) {
+                lastKeyTime = System.currentTimeMillis();
+                lastKeyChar = ch;
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, ch, true));
+                return true;
+            }
+
             // Block inventory key from closing the terminal
             if (this.minecraft != null && this.minecraft.options.keyInventory.matches(keyEvent)) {
                 return true;
             }
 
-            // Allow normal character event processing
-            return super.keyPressed(keyEvent);
+            return true;
         }
 
         // Single Command mode input handling

@@ -52,8 +52,8 @@ public class SystemBlockMod implements ModInitializer {
         // Server handlers
         ServerPlayNetworking.registerGlobalReceiver(TerminalInputPayload.TYPE, (payload, context) -> {
             context.server().execute(() -> {
-                // In multiplayer, require OP / Game Master permissions to execute or modify host shell commands
-                if (!context.player().canUseGameMasterBlocks() && !context.server().isSingleplayer()) {
+                boolean allowed = context.server().isSingleplayer() || context.player().canUseGameMasterBlocks();
+                if (!allowed) {
                     LOGGER.warning("[SystemBlock] Unauthorized configuration attempt at " + payload.pos() + " by player: " + context.player().getName().getString());
                     return;
                 }
@@ -72,8 +72,8 @@ public class SystemBlockMod implements ModInitializer {
 
         ServerPlayNetworking.registerGlobalReceiver(TerminalControlPayload.TYPE, (payload, context) -> {
             context.server().execute(() -> {
-                // In multiplayer, require OP / Game Master permissions
-                if (!context.player().canUseGameMasterBlocks() && !context.server().isSingleplayer()) {
+                boolean allowed = context.server().isSingleplayer() || context.player().canUseGameMasterBlocks();
+                if (!allowed) {
                     LOGGER.warning("[SystemBlock] Unauthorized control attempt at " + payload.pos() + " by player: " + context.player().getName().getString());
                     return;
                 }
