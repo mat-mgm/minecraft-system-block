@@ -27,8 +27,9 @@ public class SystemBlockEntity extends BlockEntity {
     private String mode = "COMMAND"; // "COMMAND" or "TERMINAL"
     private boolean pulseOnSuccess = true;
 
-    // Buffer of terminal output lines (up to 300 lines)
-    private final LinkedList<String> logBuffer = new LinkedList<>();
+    // Independent log buffers for Command mode and Terminal mode
+    private final LinkedList<String> commandLogBuffer = new LinkedList<>();
+    private final LinkedList<String> terminalLogBuffer = new LinkedList<>();
     private static final int MAX_BUFFER_LINES = 300;
 
     // Active host process & stdin streams
@@ -83,52 +84,98 @@ public class SystemBlockEntity extends BlockEntity {
         notifyUpdate();
     }
 
-    public synchronized String getAllLogs() {
+    public synchronized String getCommandLogs() {
         StringBuilder sb = new StringBuilder();
-        for (String line : logBuffer) {
+        for (String line : commandLogBuffer) {
             sb.append(line);
         }
         return sb.toString();
+    }
+
+    public synchronized String getTerminalLogs() {
+        StringBuilder sb = new StringBuilder();
+        for (String line : terminalLogBuffer) {
+            sb.append(line);
+        }
+        return sb.toString();
+    }
+
+    public synchronized String getAllLogs() {
+        return "TERMINAL".equals(this.mode) ? getTerminalLogs() : getCommandLogs();
     }
 
     public synchronized boolean isProcessRunning() {
         return activeProcess != null && activeProcess.isAlive();
     }
 
-    private synchronized void appendLog(String line) {
+    private synchronized void appendLog(String targetMode, String line) {
         if (line == null || line.isEmpty()) return;
         totalBytesOutput.addAndGet(line.length());
 
-        while (logBuffer.size() >= MAX_BUFFER_LINES) {
-            logBuffer.removeFirst();
+        LinkedList<String> buffer = "COMMAND".equals(targetMode) ? commandLogBuffer : terminalLogBuffer;
+        while (buffer.size() >= MAX_BUFFER_LINES) {
+            buffer.removeFirst();
         }
-        logBuffer.addLast(line);
+        buffer.addLast(line);
 
-        // Broadcast delta safely on Minecraft server main thread to prevent Netty thread deadlock
+        broadcastLog(targetMode, line, true);
+    }
+
+    private void broadcastLog(String targetMode, String text, boolean append) {
         if (this.level instanceof ServerLevel serverLevel) {
             serverLevel.getServer().execute(() -> {
-                TerminalOutputPayload payload = new TerminalOutputPayload(this.worldPosition, line, true);
-                for (ServerPlayer player : serverLevel.players()) {
-                    if (player.distanceToSqr(worldPosition.getX(), worldPosition.getY(), worldPosition.getZ()) < 1024) {
-                        ServerPlayNetworking.send(player, payload);
+                int maxChunk = 8192;
+                if (text.length() <= maxChunk) {
+                    TerminalOutputPayload payload = new TerminalOutputPayload(this.worldPosition, targetMode, text, append);
+                    sendToNearby(serverLevel, payload);
+                } else {
+                    for (int i = 0; i < text.length(); i += maxChunk) {
+                        int end = Math.min(text.length(), i + maxChunk);
+                        String sub = text.substring(i, end);
+                        TerminalOutputPayload payload = new TerminalOutputPayload(this.worldPosition, targetMode, sub, (i == 0) ? append : true);
+                        sendToNearby(serverLevel, payload);
                     }
                 }
             });
         }
     }
 
-    public synchronized void clearLogs() {
-        logBuffer.clear();
-        if (this.level instanceof ServerLevel serverLevel) {
-            serverLevel.getServer().execute(() -> {
-                TerminalOutputPayload payload = new TerminalOutputPayload(this.worldPosition, "", false);
-                for (ServerPlayer player : serverLevel.players()) {
-                    if (player.distanceToSqr(worldPosition.getX(), worldPosition.getY(), worldPosition.getZ()) < 1024) {
-                        ServerPlayNetworking.send(player, payload);
-                    }
-                }
-            });
+    private void sendToNearby(ServerLevel serverLevel, TerminalOutputPayload payload) {
+        for (ServerPlayer player : serverLevel.players()) {
+            if (player.distanceToSqr(worldPosition.getX(), worldPosition.getY(), worldPosition.getZ()) < 1024) {
+                ServerPlayNetworking.send(player, payload);
+            }
         }
+    }
+
+    public void syncLogsToPlayer(ServerPlayer player, String targetMode) {
+        String logs = "COMMAND".equals(targetMode) ? getCommandLogs() : getTerminalLogs();
+        if (logs == null || logs.isEmpty()) return;
+        int maxChunk = 8192;
+        if (logs.length() <= maxChunk) {
+            ServerPlayNetworking.send(player, new TerminalOutputPayload(this.worldPosition, targetMode, logs, false));
+        } else {
+            for (int i = 0; i < logs.length(); i += maxChunk) {
+                int end = Math.min(logs.length(), i + maxChunk);
+                String sub = logs.substring(i, end);
+                ServerPlayNetworking.send(player, new TerminalOutputPayload(this.worldPosition, targetMode, sub, i != 0));
+            }
+        }
+    }
+
+    public synchronized void clearCommandLogs() {
+        commandLogBuffer.clear();
+        broadcastLog("COMMAND", "", false);
+    }
+
+    public synchronized void clearTerminalLogs() {
+        terminalLogBuffer.clear();
+        broadcastLog("TERMINAL", "", false);
+    }
+
+    public synchronized void clearLogs() {
+        clearCommandLogs();
+        clearTerminalLogs();
     }
 
     public void sendInputToProcess(String input) {
@@ -142,7 +189,7 @@ public class SystemBlockEntity extends BlockEntity {
             if (raw) {
                 startProcess(null);
             } else {
-                appendLog("> " + input + "\n");
+                appendLog("COMMAND", "> " + input + "\n");
                 startProcess(input);
                 return;
             }
@@ -153,7 +200,7 @@ public class SystemBlockEntity extends BlockEntity {
                 : (input + "\n").getBytes(StandardCharsets.UTF_8);
 
         if (!raw) {
-            appendLog("> " + input + "\n");
+            appendLog("COMMAND", "> " + input + "\n");
         }
 
         // Asynchronous non-blocking stdin queue write — prevents Minecraft server tick freezes
@@ -161,8 +208,9 @@ public class SystemBlockEntity extends BlockEntity {
     }
 
     public synchronized void interruptProcess() {
+        String activeMode = this.mode;
         if (activeProcess != null && activeProcess.isAlive()) {
-            appendLog("[Sending SIGINT / terminating process...]\n");
+            appendLog(activeMode, "[Sending SIGINT / terminating process...]\n");
             stdinQueue.clear();
             stdinQueue.offer(new byte[] { 3 }); // ASCII 3 = Ctrl+C
             try {
@@ -170,13 +218,14 @@ public class SystemBlockEntity extends BlockEntity {
                 activeProcess.destroy();
             } catch (Exception ignored) {}
         } else {
-            appendLog("[No active process to interrupt]\n");
+            appendLog(activeMode, "[No active process to interrupt]\n");
         }
     }
 
     public synchronized void killProcess() {
+        String activeMode = this.mode;
         if (activeProcess != null) {
-            appendLog("[Killing process tree (SIGKILL)...]\n");
+            appendLog(activeMode, "[Killing process tree (SIGKILL)...]\n");
             stdinQueue.clear();
             try {
                 activeProcess.toHandle().descendants().forEach(ProcessHandle::destroyForcibly);
@@ -186,14 +235,17 @@ public class SystemBlockEntity extends BlockEntity {
             } catch (Exception ignored) {}
             activeProcess = null;
         } else {
-            appendLog("[No active process to kill]\n");
+            appendLog(activeMode, "[No active process to kill]\n");
         }
     }
 
     public synchronized void startProcess(String cmdToRun) {
+        final boolean isTerminalMode = "TERMINAL".equals(this.mode);
+        final String processTargetMode = isTerminalMode ? "TERMINAL" : "COMMAND";
+
         if (isProcessRunning()) {
             if (cmdToRun != null && !cmdToRun.isEmpty()) {
-                appendLog("[Notice: A process is already running. Interrupt or wait before starting a new one]\n");
+                appendLog(processTargetMode, "[Notice: A process is already running. Interrupt or wait before starting a new one]\n");
             }
             return;
         }
@@ -201,7 +253,6 @@ public class SystemBlockEntity extends BlockEntity {
         stdinQueue.clear();
         totalBytesOutput.set(0);
 
-        final boolean isTerminalMode = "TERMINAL".equals(this.mode);
         String rawCmd;
         if (isTerminalMode) {
             rawCmd = (cmdToRun != null && !cmdToRun.trim().isEmpty()) ? cmdToRun.trim() : "$SHELL";
@@ -211,12 +262,12 @@ public class SystemBlockEntity extends BlockEntity {
 
         final String targetCmd = rawCmd;
         if (targetCmd.isEmpty()) {
-            appendLog("[No command configured to execute]\n");
+            appendLog(processTargetMode, "[No command configured to execute]\n");
             return;
         }
 
         final BlockPos pos = this.worldPosition;
-        appendLog("[Starting session in ~ at " + pos.getX() + "," + pos.getY() + "," + pos.getZ() + ": " + targetCmd + "]\n");
+        appendLog(processTargetMode, "[Starting " + (isTerminalMode ? "session" : "command") + " in ~ at " + pos.getX() + "," + pos.getY() + "," + pos.getZ() + ": " + targetCmd + "]\n");
 
         if (this.level instanceof ServerLevel sLevel) {
             this.ipcManager.start(sLevel);
@@ -336,7 +387,7 @@ public class SystemBlockEntity extends BlockEntity {
                         // Check 1: Output flood freeze protection (> 2MB in 500ms)
                         long currentBytes = totalBytesOutput.get();
                         if (currentBytes - lastBytes > 2_000_000) {
-                            appendLog("\n[Freeze Watchdog: Terminating process due to excessive output flood (>4MB/s)]\n");
+                            appendLog(processTargetMode, "\n[Freeze Watchdog: Terminating process due to excessive output flood (>4MB/s)]\n");
                             killProcess();
                             break;
                         }
@@ -344,7 +395,7 @@ public class SystemBlockEntity extends BlockEntity {
 
                         // Check 2: Single command timeout (kill if unresponsive for > 30s)
                         if (!isTerminalMode && System.currentTimeMillis() - startTime > 30_000) {
-                            appendLog("\n[Freeze Watchdog: Command timed out after 30 seconds. Terminating process]\n");
+                            appendLog(processTargetMode, "\n[Freeze Watchdog: Command timed out after 30 seconds. Terminating process]\n");
                             killProcess();
                             break;
                         }
@@ -358,12 +409,12 @@ public class SystemBlockEntity extends BlockEntity {
                     int charsRead;
                     while ((charsRead = reader.read(buffer)) != -1) {
                         String chunk = new String(buffer, 0, charsRead);
-                        appendLog(chunk);
+                        appendLog(processTargetMode, chunk);
                     }
                 }
 
                 int exitCode = process.waitFor();
-                appendLog("\n[Session exited with code: " + exitCode + "]\n");
+                appendLog(processTargetMode, "\n[" + (isTerminalMode ? "Shell" : "Command") + " exited with code: " + exitCode + "]\n");
 
                 synchronized (this) {
                     if (this.activeProcess == process) {
@@ -382,7 +433,7 @@ public class SystemBlockEntity extends BlockEntity {
                 }
             } catch (Exception e) {
                 LOGGER.severe("[SystemBlockEntity] Failed: " + e.getMessage());
-                appendLog("[Error: " + e.getMessage() + "]\n");
+                appendLog(processTargetMode, "[Error: " + e.getMessage() + "]\n");
                 synchronized (this) {
                     this.activeProcess = null;
                 }
@@ -508,7 +559,8 @@ public class SystemBlockEntity extends BlockEntity {
         output.putString("Command", this.command);
         output.putString("Mode", this.mode);
         output.putBoolean("PulseOnSuccess", this.pulseOnSuccess);
-        output.putString("LastLogs", getAllLogs());
+        output.putString("CommandLogs", getCommandLogs());
+        output.putString("TerminalLogs", getTerminalLogs());
     }
 
     @Override
@@ -517,11 +569,22 @@ public class SystemBlockEntity extends BlockEntity {
         this.command = input.getStringOr("Command", "");
         this.mode = input.getStringOr("Mode", "COMMAND");
         this.pulseOnSuccess = input.getBooleanOr("PulseOnSuccess", true);
-        String savedLogs = input.getStringOr("LastLogs", "");
-        if (!savedLogs.isEmpty()) {
-            logBuffer.clear();
-            for (String l : savedLogs.split("\n")) {
-                if (!l.isEmpty()) logBuffer.add(l);
+        String cmdLogs = input.getStringOr("CommandLogs", "");
+        if (cmdLogs.isEmpty()) {
+            // Backwards compatibility with previous "LastLogs"
+            cmdLogs = input.getStringOr("LastLogs", "");
+        }
+        if (!cmdLogs.isEmpty()) {
+            commandLogBuffer.clear();
+            for (String l : cmdLogs.split("\n")) {
+                if (!l.isEmpty()) commandLogBuffer.add(l);
+            }
+        }
+        String termLogs = input.getStringOr("TerminalLogs", "");
+        if (!termLogs.isEmpty()) {
+            terminalLogBuffer.clear();
+            for (String l : termLogs.split("\n")) {
+                if (!l.isEmpty()) terminalLogBuffer.add(l);
             }
         }
     }
@@ -532,7 +595,8 @@ public class SystemBlockEntity extends BlockEntity {
         tag.putString("Command", this.command);
         tag.putString("Mode", this.mode);
         tag.putBoolean("PulseOnSuccess", this.pulseOnSuccess);
-        tag.putString("LastLogs", getAllLogs());
+        tag.putString("CommandLogs", getCommandLogs());
+        tag.putString("TerminalLogs", getTerminalLogs());
         return tag;
     }
 

@@ -85,15 +85,17 @@ public class SystemBlockMod implements ModInitializer {
                             if (!systemBlockEntity.isProcessRunning()) {
                                 systemBlockEntity.startProcess(null);
                             } else {
-                                String currentLogs = systemBlockEntity.getAllLogs();
-                                if (!currentLogs.isEmpty()) {
-                                    ServerPlayNetworking.send(context.player(), new TerminalOutputPayload(payload.pos(), currentLogs, false));
-                                }
+                                systemBlockEntity.syncLogsToPlayer(context.player(), systemBlockEntity.getMode());
                             }
                         }
                         case "INTERRUPT" -> systemBlockEntity.interruptProcess();
                         case "KILL" -> systemBlockEntity.killProcess();
-                        case "CLEAR" -> systemBlockEntity.clearLogs();
+                        case "CLEAR_COMMAND" -> systemBlockEntity.clearCommandLogs();
+                        case "CLEAR_TERMINAL" -> systemBlockEntity.clearTerminalLogs();
+                        case "CLEAR" -> {
+                            systemBlockEntity.clearCommandLogs();
+                            systemBlockEntity.clearTerminalLogs();
+                        }
                         case "TOGGLE_PULSE" -> systemBlockEntity.setPulseOnSuccess(!systemBlockEntity.isPulseOnSuccess());
                         case "TOGGLE_MODE" -> {
                             String next = "COMMAND".equals(systemBlockEntity.getMode()) ? "TERMINAL" : "COMMAND";

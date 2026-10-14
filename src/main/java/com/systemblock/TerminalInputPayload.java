@@ -18,7 +18,7 @@ public record TerminalInputPayload(BlockPos pos, String input, boolean executeDi
     public static final StreamCodec<ByteBuf, TerminalInputPayload> STREAM_CODEC = StreamCodec.composite(
             BlockPos.STREAM_CODEC,
             TerminalInputPayload::pos,
-            ByteBufCodecs.STRING_UTF8,
+            ByteBufCodecs.stringUtf8(262144),
             TerminalInputPayload::input,
             ByteBufCodecs.BOOL,
             TerminalInputPayload::executeDirect,

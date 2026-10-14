@@ -15,7 +15,7 @@ public class SystemBlockClientMod implements ClientModInitializer {
                 Screen current = Minecraft.getInstance().gui.screen();
                 if (current instanceof SystemBlockScreen screen) {
                     if (screen.getBlockPos().equals(payload.pos())) {
-                        screen.appendTerminalLog(payload.outputText(), payload.append());
+                        screen.appendTerminalLog(payload.mode(), payload.outputText(), payload.append());
                     }
                 }
             });

@@ -22,7 +22,7 @@ public class SystemBlockScreen extends Screen {
     private final BlockPos blockPos;
 
     private String currentMode; // "COMMAND" or "TERMINAL"
-    private final StringBuilder liveLogs = new StringBuilder();
+    private final StringBuilder commandLogs = new StringBuilder();
     private final TerminalGrid terminalGrid = new TerminalGrid();
 
     // Widgets
@@ -47,24 +47,34 @@ public class SystemBlockScreen extends Screen {
         this.blockEntity = blockEntity;
         this.blockPos = blockEntity.getBlockPos();
         this.currentMode = blockEntity.getMode();
-        String initial = blockEntity.getAllLogs();
-        this.liveLogs.append(initial);
-        this.terminalGrid.write(initial);
+        String initialCmd = blockEntity.getCommandLogs();
+        if (initialCmd != null && !initialCmd.isEmpty()) {
+            this.commandLogs.append(initialCmd);
+        }
+        String initialTerm = blockEntity.getTerminalLogs();
+        if (initialTerm != null && !initialTerm.isEmpty()) {
+            this.terminalGrid.write(initialTerm);
+        }
     }
 
     public BlockPos getBlockPos() {
         return blockPos;
     }
 
-    public void appendTerminalLog(String text, boolean append) {
-        if (!append) {
-            this.liveLogs.setLength(0);
-            this.terminalGrid.clear();
-        }
-        this.liveLogs.append(text);
-        this.terminalGrid.write(text);
-        if (this.consoleView != null && "COMMAND".equals(currentMode)) {
-            this.consoleView.setValue(this.liveLogs.toString());
+    public void appendTerminalLog(String targetMode, String text, boolean append) {
+        if ("COMMAND".equals(targetMode)) {
+            if (!append) {
+                this.commandLogs.setLength(0);
+            }
+            this.commandLogs.append(text);
+            if (this.consoleView != null) {
+                this.consoleView.setValue(this.commandLogs.toString());
+            }
+        } else if ("TERMINAL".equals(targetMode)) {
+            if (!append) {
+                this.terminalGrid.clear();
+            }
+            this.terminalGrid.write(text);
         }
     }
 
@@ -98,7 +108,7 @@ public class SystemBlockScreen extends Screen {
                 .setTextColor(0xFF00FF88) // Matrix / Emerald green
                 .setShowDecorations(false)
                 .build(this.font, inputWidth, consoleHeight, Component.literal("Console"));
-        this.consoleView.setValue(this.liveLogs.toString());
+        this.consoleView.setValue(this.commandLogs.toString());
         this.consoleView.visible = "COMMAND".equals(currentMode);
         this.addRenderableWidget(this.consoleView);
 
@@ -154,10 +164,14 @@ public class SystemBlockScreen extends Screen {
         this.clearButton = this.addRenderableWidget(Button.builder(
                 Component.literal("Clear"),
                 button -> {
-                    this.liveLogs.setLength(0);
-                    this.terminalGrid.clear();
-                    if (this.consoleView != null) this.consoleView.setValue("");
-                    ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "CLEAR"));
+                    if ("COMMAND".equals(currentMode)) {
+                        this.commandLogs.setLength(0);
+                        if (this.consoleView != null) this.consoleView.setValue("");
+                        ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "CLEAR_COMMAND"));
+                    } else {
+                        this.terminalGrid.clear();
+                        ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "CLEAR_TERMINAL"));
+                    }
                 }
         ).bounds(startX + (btnWidth + gap) * 3, bottomY, btnWidth, 20).build());
 
