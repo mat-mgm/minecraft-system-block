@@ -263,6 +263,9 @@ public class SystemBlockEntity extends BlockEntity {
                     pb.environment().put("TERM", "xterm-256color");
                     pb.environment().put("COLUMNS", "80");
                     pb.environment().put("LINES", "24");
+                    pb.environment().put("LANG", "en_US.UTF-8");
+                    pb.environment().put("LC_ALL", "en_US.UTF-8");
+                    pb.environment().put("PYTHONIOENCODING", "utf-8");
 
                     // Set default shell
                     String envShell = System.getenv("SHELL");
@@ -350,11 +353,11 @@ public class SystemBlockEntity extends BlockEntity {
                 watchdogThread.setDaemon(true);
                 watchdogThread.start();
 
-                try (InputStream inputStream = process.getInputStream()) {
-                    byte[] buffer = new byte[2048];
-                    int bytesRead;
-                    while ((bytesRead = inputStream.read(buffer)) != -1) {
-                        String chunk = new String(buffer, 0, bytesRead, StandardCharsets.UTF_8);
+                try (Reader reader = new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8)) {
+                    char[] buffer = new char[2048];
+                    int charsRead;
+                    while ((charsRead = reader.read(buffer)) != -1) {
+                        String chunk = new String(buffer, 0, charsRead);
                         appendLog(chunk);
                     }
                 }

@@ -31,8 +31,10 @@ public class SystemBlockScreen extends Screen {
     private Button startRestartButton;
     private Button sigintButton;
     private Button clearButton;
+    private Button zoomButton;
     private Button modeToggleButton;
     private Button doneButton;
+    private static float fontScale = 0.65f;
 
     // Dimensions
     private int startX;
@@ -69,17 +71,17 @@ public class SystemBlockScreen extends Screen {
     @Override
     protected void init() {
         int centerX = this.width / 2;
-        this.inputWidth = Math.max(320, Math.min(580, this.width - 24));
+        this.inputWidth = Math.max(320, this.width - 24);
         this.startX = centerX - inputWidth / 2;
 
-        this.terminalY = 24;
+        this.terminalY = 22;
         int totalBottomReserved = 32; // Single row of bottom buttons (20px) + margins
-        this.terminalHeight = Math.max(70, this.height - terminalY - totalBottomReserved - 10);
+        this.terminalHeight = Math.max(70, this.height - terminalY - totalBottomReserved - 8);
 
-        // Bottom Line: [ Mode ] [ ⏹ Stop ] [ Clear Logs ] [ Done ]
+        // Bottom Line: [ Mode ] [ ⏹ Stop ] [ Zoom: 0.65x ] [ Clear ] [ Done ]
         int bottomY = this.height - 28;
         int gap = 4;
-        int btnWidth = (inputWidth - (gap * 3)) / 4;
+        int btnWidth = (inputWidth - (gap * 4)) / 5;
 
         // Command Mode: Command input bar + Run button sitting directly above bottom buttons
         int inputY = bottomY - 26;
@@ -136,6 +138,18 @@ public class SystemBlockScreen extends Screen {
                 button -> ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "INTERRUPT"))
         ).bounds(startX + (btnWidth + gap), bottomY, btnWidth, 20).build());
 
+        // Zoom button
+        this.zoomButton = this.addRenderableWidget(Button.builder(
+                Component.literal("Zoom: " + fontScale + "x"),
+                button -> {
+                    if (fontScale == 0.65f) fontScale = 0.8f;
+                    else if (fontScale == 0.8f) fontScale = 1.0f;
+                    else if (fontScale == 1.0f) fontScale = 0.5f;
+                    else fontScale = 0.65f;
+                    button.setMessage(Component.literal("Zoom: " + fontScale + "x"));
+                }
+        ).bounds(startX + (btnWidth + gap) * 2, bottomY, btnWidth, 20).build());
+
         // Clear button
         this.clearButton = this.addRenderableWidget(Button.builder(
                 Component.literal("Clear"),
@@ -145,7 +159,7 @@ public class SystemBlockScreen extends Screen {
                     if (this.consoleView != null) this.consoleView.setValue("");
                     ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "CLEAR"));
                 }
-        ).bounds(startX + (btnWidth + gap) * 2, bottomY, btnWidth, 20).build());
+        ).bounds(startX + (btnWidth + gap) * 3, bottomY, btnWidth, 20).build());
 
         // Done button
         this.doneButton = this.addRenderableWidget(Button.builder(
@@ -154,7 +168,7 @@ public class SystemBlockScreen extends Screen {
                     saveCommand();
                     onClose();
                 }
-        ).bounds(startX + (btnWidth + gap) * 3, bottomY, inputWidth - (btnWidth + gap) * 3, 20).build());
+        ).bounds(startX + (btnWidth + gap) * 4, bottomY, inputWidth - (btnWidth + gap) * 4, 20).build());
 
         updateModeVisibility();
 
@@ -182,6 +196,7 @@ public class SystemBlockScreen extends Screen {
             }
         }
         if (this.startRestartButton != null) this.startRestartButton.visible = isCmd;
+        if (this.zoomButton != null) this.zoomButton.visible = !isCmd;
         if (!isCmd) {
             this.setFocused(null);
             if (this.minecraft != null && this.minecraft.textInputManager() != null) {
@@ -388,10 +403,16 @@ public class SystemBlockScreen extends Screen {
         // Enable hardware scissoring to strictly prevent any text overflowing out of the terminal box
         graphics.enableScissor(bgX, bgY, bgX + bgW, bgY + bgH);
 
-        // Render rows inside the terminal screen
-        // Visible lines budget based on terminalHeight (9px per line in MC font)
+        // Apply matrix sub-scaling for crisp, spacious terminal layout
+        graphics.pose().pushMatrix();
+        graphics.pose().translate(bgX + 4, bgY + 3);
+        graphics.pose().scale(fontScale, fontScale);
+
+        // Render rows inside the terminal screen using transformed coordinates
         int lineHeight = this.font.lineHeight; // 9
-        int maxVisibleRows = Math.min(TerminalGrid.ROWS, Math.max(1, bgH / lineHeight));
+        float virtualH = (bgH - 6) / fontScale;
+        float virtualW = (bgW - 8) / fontScale;
+        int maxVisibleRows = Math.min(TerminalGrid.ROWS, Math.max(1, (int) (virtualH / lineHeight)));
 
         // Ensure the cursor row is always visible within the rendered window
         int curY = terminalGrid.getCursorY();
@@ -401,13 +422,13 @@ public class SystemBlockScreen extends Screen {
         }
 
         for (int r = startRow; r < TerminalGrid.ROWS; r++) {
-            int drawY = bgY + (r - startRow) * lineHeight;
-            if (drawY + lineHeight > bgY + bgH) break;
+            int drawY = (r - startRow) * lineHeight;
+            if (drawY + lineHeight > virtualH) break;
 
             // Build line text and render with ANSI colors
             StringBuilder lineSb = new StringBuilder();
             int currentChunkFg = -1;
-            int chunkStartX = bgX + 4;
+            int chunkStartX = 0;
 
             for (int c = 0; c < TerminalGrid.COLS; c++) {
                 char ch = terminalGrid.getChar(r, c);
@@ -416,11 +437,11 @@ public class SystemBlockScreen extends Screen {
 
                 int charW = this.font.width(String.valueOf(ch));
                 // Stop rendering if reaching right boundary
-                if (chunkStartX + this.font.width(lineSb.toString()) + charW > bgX + bgW - 4) {
+                if (chunkStartX + this.font.width(lineSb.toString()) + charW > virtualW) {
                     break;
                 }
 
-                // If background color is specified, fill cell
+                // If background color is specified, fill cell in transformed space
                 if ((bg & 0xFF000000) != 0) {
                     graphics.fill(chunkStartX + this.font.width(lineSb.toString()), drawY,
                             chunkStartX + this.font.width(lineSb.toString()) + Math.max(5, charW), drawY + lineHeight, bg);
@@ -441,21 +462,22 @@ public class SystemBlockScreen extends Screen {
                 graphics.text(this.font, lineSb.toString(), chunkStartX, drawY, currentChunkFg != -1 ? currentChunkFg : 0xFF00FF88, false);
             }
 
-            // Blinking cursor
+            // Blinking cursor in transformed space
             if (terminalGrid.isCursorVisible() && r == curY && (System.currentTimeMillis() % 1000 < 500)) {
                 int cX = terminalGrid.getCursorX();
-                int cursorScreenX = bgX + 4;
+                int cursorVirtualX = 0;
                 for (int c = 0; c < cX && c < TerminalGrid.COLS; c++) {
-                    cursorScreenX += this.font.width(String.valueOf(terminalGrid.getChar(r, c)));
+                    cursorVirtualX += this.font.width(String.valueOf(terminalGrid.getChar(r, c)));
                 }
                 char atCursor = (cX >= 0 && cX < TerminalGrid.COLS) ? terminalGrid.getChar(r, cX) : ' ';
                 int cursorW = Math.max(5, this.font.width(String.valueOf(atCursor)));
-                if (cursorScreenX + cursorW <= bgX + bgW - 2) {
-                    graphics.fill(cursorScreenX, drawY, cursorScreenX + cursorW, drawY + lineHeight, 0xFF00FF88);
+                if (cursorVirtualX + cursorW <= virtualW) {
+                    graphics.fill(cursorVirtualX, drawY, cursorVirtualX + cursorW, drawY + lineHeight, 0xFF00FF88);
                 }
             }
         }
 
+        graphics.pose().popMatrix();
         graphics.disableScissor();
     }
 
