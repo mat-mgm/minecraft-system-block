@@ -9,8 +9,9 @@ import net.minecraft.resources.Identifier;
 
 /**
  * Client to Server: Send a line of input (or command) to the running session or update saved command.
+ * Includes target channel mode ("COMMAND" vs "TERMINAL").
  */
-public record TerminalInputPayload(BlockPos pos, String input, boolean executeDirect) implements CustomPacketPayload {
+public record TerminalInputPayload(BlockPos pos, String mode, String input, boolean executeDirect) implements CustomPacketPayload {
     public static final Type<TerminalInputPayload> TYPE = new Type<>(
             Identifier.fromNamespaceAndPath(SystemBlockMod.MOD_ID, "terminal_input")
     );
@@ -18,6 +19,8 @@ public record TerminalInputPayload(BlockPos pos, String input, boolean executeDi
     public static final StreamCodec<ByteBuf, TerminalInputPayload> STREAM_CODEC = StreamCodec.composite(
             BlockPos.STREAM_CODEC,
             TerminalInputPayload::pos,
+            ByteBufCodecs.stringUtf8(32),
+            TerminalInputPayload::mode,
             ByteBufCodecs.stringUtf8(262144),
             TerminalInputPayload::input,
             ByteBufCodecs.BOOL,

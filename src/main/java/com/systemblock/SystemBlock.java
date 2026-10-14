@@ -103,10 +103,10 @@ public class SystemBlock extends Block implements EntityBlock {
                 // Rising edge trigger: start process or send newline to running session
                 BlockEntity be = level.getBlockEntity(pos);
                 if (be instanceof SystemBlockEntity systemBlockEntity) {
-                    if (systemBlockEntity.isProcessRunning()) {
-                        systemBlockEntity.sendInputToProcess(""); // pulse sends Enter
+                    if (systemBlockEntity.isCommandRunning()) {
+                        systemBlockEntity.sendInputToProcess("COMMAND", "", false); // pulse sends Enter
                     } else {
-                        systemBlockEntity.startProcess(null);
+                        systemBlockEntity.startProcess("COMMAND", null);
                     }
                 }
             }

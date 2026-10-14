@@ -9,8 +9,9 @@ import net.minecraft.resources.Identifier;
 
 /**
  * Client to Server: Terminal control signals (start, sigint/interrupt, kill, clear).
+ * Includes target channel mode ("COMMAND" vs "TERMINAL") to eliminate cross-mode interference.
  */
-public record TerminalControlPayload(BlockPos pos, String action) implements CustomPacketPayload {
+public record TerminalControlPayload(BlockPos pos, String mode, String action) implements CustomPacketPayload {
     public static final Type<TerminalControlPayload> TYPE = new Type<>(
             Identifier.fromNamespaceAndPath(SystemBlockMod.MOD_ID, "terminal_control")
     );
@@ -18,7 +19,9 @@ public record TerminalControlPayload(BlockPos pos, String action) implements Cus
     public static final StreamCodec<ByteBuf, TerminalControlPayload> STREAM_CODEC = StreamCodec.composite(
             BlockPos.STREAM_CODEC,
             TerminalControlPayload::pos,
-            ByteBufCodecs.STRING_UTF8,
+            ByteBufCodecs.stringUtf8(32),
+            TerminalControlPayload::mode,
+            ByteBufCodecs.stringUtf8(64),
             TerminalControlPayload::action,
             TerminalControlPayload::new
     );

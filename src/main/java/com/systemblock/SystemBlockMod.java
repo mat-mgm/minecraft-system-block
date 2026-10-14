@@ -61,7 +61,7 @@ public class SystemBlockMod implements ModInitializer {
                 BlockEntity be = context.player().level().getBlockEntity(payload.pos());
                 if (be instanceof SystemBlockEntity systemBlockEntity) {
                     if (payload.executeDirect()) {
-                        systemBlockEntity.sendInputToProcess(payload.input(), true);
+                        systemBlockEntity.sendInputToProcess(payload.mode(), payload.input(), true);
                     } else {
                         systemBlockEntity.setCommand(payload.input());
                         LOGGER.info("[SystemBlock] Saved command at " + payload.pos() + " by " + context.player().getName().getString());
@@ -80,29 +80,32 @@ public class SystemBlockMod implements ModInitializer {
 
                 BlockEntity be = context.player().level().getBlockEntity(payload.pos());
                 if (be instanceof SystemBlockEntity systemBlockEntity) {
+                    String targetMode = payload.mode();
                     switch (payload.action()) {
                         case "START" -> {
-                            String currentMode = systemBlockEntity.getMode();
-                            if (!systemBlockEntity.isProcessRunning(currentMode)) {
-                                systemBlockEntity.startProcess(null);
+                            if (!systemBlockEntity.isProcessRunning(targetMode)) {
+                                systemBlockEntity.startProcess(targetMode, null);
                             } else {
-                                systemBlockEntity.syncLogsToPlayer(context.player(), currentMode);
+                                systemBlockEntity.syncLogsToPlayer(context.player(), targetMode);
                             }
                         }
-                        case "INTERRUPT" -> systemBlockEntity.interruptProcess();
-                        case "KILL" -> systemBlockEntity.killProcess();
+                        case "INTERRUPT" -> systemBlockEntity.interruptProcess(targetMode);
+                        case "KILL" -> systemBlockEntity.killProcess(targetMode);
                         case "CLEAR_COMMAND" -> systemBlockEntity.clearCommandLogs();
                         case "CLEAR_TERMINAL" -> systemBlockEntity.clearTerminalLogs();
                         case "CLEAR" -> {
-                            systemBlockEntity.clearCommandLogs();
-                            systemBlockEntity.clearTerminalLogs();
+                            if ("COMMAND".equals(targetMode)) {
+                                systemBlockEntity.clearCommandLogs();
+                            } else {
+                                systemBlockEntity.clearTerminalLogs();
+                            }
                         }
                         case "TOGGLE_PULSE" -> systemBlockEntity.setPulseOnSuccess(!systemBlockEntity.isPulseOnSuccess());
                         case "TOGGLE_MODE" -> {
                             String next = "COMMAND".equals(systemBlockEntity.getMode()) ? "TERMINAL" : "COMMAND";
                             systemBlockEntity.setMode(next);
                             if ("TERMINAL".equals(next) && !systemBlockEntity.isProcessRunning("TERMINAL")) {
-                                systemBlockEntity.startProcess(null);
+                                systemBlockEntity.startProcess("TERMINAL", null);
                             }
                         }
                     }

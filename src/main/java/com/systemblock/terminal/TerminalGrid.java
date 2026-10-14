@@ -133,6 +133,18 @@ public class TerminalGrid {
         return cursorVisible;
     }
 
+    public synchronized String[][] getRawCells() {
+        return cells;
+    }
+
+    public synchronized int[][] getRawFg() {
+        return fgColors;
+    }
+
+    public synchronized int[][] getRawBg() {
+        return bgColors;
+    }
+
     public synchronized String getCell(int r, int c) {
         if (r < 0 || r >= rows || c < 0 || c >= cols) return " ";
         String s = cells[r][c];

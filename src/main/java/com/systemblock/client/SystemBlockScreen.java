@@ -123,7 +123,7 @@ public class SystemBlockScreen extends Screen {
                 Component.literal("▶ Run"),
                 button -> {
                     saveCommand();
-                    ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "START"));
+                    ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "COMMAND", "START"));
                 }
         ).bounds(startX + cmdInputWidth + 4, inputY, runBtnWidth, 20).build());
         this.startRestartButton.visible = "COMMAND".equals(currentMode);
@@ -135,9 +135,9 @@ public class SystemBlockScreen extends Screen {
                     this.currentMode = "TERMINAL".equals(this.currentMode) ? "COMMAND" : "TERMINAL";
                     button.setMessage(Component.literal("Mode: " + ("TERMINAL".equals(currentMode) ? "Terminal" : "Command")));
                     updateModeVisibility();
-                    ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "TOGGLE_MODE"));
+                    ClientPlayNetworking.send(new TerminalControlPayload(blockPos, this.currentMode, "TOGGLE_MODE"));
                     if ("TERMINAL".equals(this.currentMode)) {
-                        ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "START"));
+                        ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "TERMINAL", "START"));
                         adaptTerminalDimensions();
                     }
                 }
@@ -146,7 +146,7 @@ public class SystemBlockScreen extends Screen {
         // Stop button
         this.sigintButton = this.addRenderableWidget(Button.builder(
                 Component.literal("⏹ Stop"),
-                button -> ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "INTERRUPT"))
+                button -> ClientPlayNetworking.send(new TerminalControlPayload(blockPos, currentMode, "INTERRUPT"))
         ).bounds(startX + (btnWidth + gap), bottomY, btnWidth, 20).build());
 
         // Zoom button: cycling through multiple sub-scale modes down to 0.25x for massive terminal applications
@@ -172,10 +172,10 @@ public class SystemBlockScreen extends Screen {
                     if ("COMMAND".equals(currentMode)) {
                         this.commandLogs.setLength(0);
                         if (this.consoleView != null) this.consoleView.setValue("");
-                        ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "CLEAR_COMMAND"));
+                        ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "COMMAND", "CLEAR_COMMAND"));
                     } else {
                         this.terminalGrid.clear();
-                        ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "CLEAR_TERMINAL"));
+                        ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "TERMINAL", "CLEAR_TERMINAL"));
                     }
                 }
         ).bounds(startX + (btnWidth + gap) * 3, bottomY, btnWidth, 20).build());
@@ -193,7 +193,7 @@ public class SystemBlockScreen extends Screen {
 
         // If in Terminal mode, ensure server starts/connects to the interactive host shell and adapts grid dimensions
         if ("TERMINAL".equals(currentMode)) {
-            ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "START"));
+            ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "TERMINAL", "START"));
             if (this.minecraft != null && this.minecraft.textInputManager() != null) {
                 this.minecraft.textInputManager().startTextInput(this);
             }
@@ -213,7 +213,7 @@ public class SystemBlockScreen extends Screen {
             int targetCols = Math.max(80, Math.min(260, (int) (virtualW / 6)));
             int targetRows = Math.max(24, Math.min(100, (int) (virtualH / 9)));
             terminalGrid.resize(targetCols, targetRows);
-            ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[8;" + targetRows + ";" + targetCols + "t", true));
+            sendTerminalInput("\033[8;" + targetRows + ";" + targetCols + "t");
         }
     }
 
@@ -240,10 +240,16 @@ public class SystemBlockScreen extends Screen {
         }
     }
 
+    private void sendTerminalInput(String str) {
+        if (str != null && !str.isEmpty()) {
+            ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "TERMINAL", str, true));
+        }
+    }
+
     private void saveCommand() {
         String cmd = this.commandInput.getValue();
         this.blockEntity.setCommand(cmd);
-        ClientPlayNetworking.send(new TerminalInputPayload(blockPos, cmd, false));
+        ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "COMMAND", cmd, false));
     }
 
     @Override
@@ -264,7 +270,7 @@ public class SystemBlockScreen extends Screen {
         if ("TERMINAL".equals(currentMode)) {
             String str = event.codepointAsString();
             if (str != null && !str.isEmpty()) {
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, str, true));
+                sendTerminalInput(str);
                 return true;
             }
         }
@@ -288,7 +294,7 @@ public class SystemBlockScreen extends Screen {
                 if (this.minecraft != null) {
                     String clip = this.minecraft.keyboardHandler.getClipboard();
                     if (clip != null && !clip.isEmpty()) {
-                        ClientPlayNetworking.send(new TerminalInputPayload(blockPos, clip, true));
+                        sendTerminalInput(clip);
                     }
                 }
                 return true;
@@ -305,7 +311,7 @@ public class SystemBlockScreen extends Screen {
                     ctrlChar = (char) shortcut;
                 }
                 if (ctrlChar > 0) {
-                    ClientPlayNetworking.send(new TerminalInputPayload(blockPos, String.valueOf(ctrlChar), true));
+                    sendTerminalInput(String.valueOf(ctrlChar));
                     return true;
                 }
             }
@@ -314,58 +320,58 @@ public class SystemBlockScreen extends Screen {
             if (shortcut == InputConstants.KEYCODE_RETURN || shortcut == InputConstants.KEYCODE_NUMPADENTER
                     || key == InputConstants.KEY_RETURN || key == InputConstants.KEY_NUMPADENTER
                     || shortcut == 13 || shortcut == 10 || key == 257 || key == 335) {
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\r", true));
+                sendTerminalInput("\r");
                 return true;
             }
 
             // Backspace
             if (shortcut == InputConstants.KEYCODE_BACKSPACE || key == InputConstants.KEY_BACKSPACE || shortcut == 8 || key == 259) {
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\u007F", true)); // ASCII 127 DEL
+                sendTerminalInput("\u007F"); // ASCII 127 DEL
                 return true;
             }
 
             // Tab
             if (shortcut == InputConstants.KEYCODE_TAB || key == InputConstants.KEY_TAB || shortcut == 9 || key == 258) {
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\t", true));
+                sendTerminalInput("\t");
                 return true;
             }
 
             // Delete
             if (shortcut == InputConstants.KEYCODE_DELETE || key == InputConstants.KEY_DELETE || shortcut == 127 || key == 261) {
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[3~", true));
+                sendTerminalInput("\033[3~");
                 return true;
             }
 
             // Arrow keys
             if (shortcut == InputConstants.KEYCODE_UP || key == InputConstants.KEY_UP || key == 265) {
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[A", true));
+                sendTerminalInput("\033[A");
                 return true;
             } else if (shortcut == InputConstants.KEYCODE_DOWN || key == InputConstants.KEY_DOWN || key == 264) {
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[B", true));
+                sendTerminalInput("\033[B");
                 return true;
             } else if (shortcut == InputConstants.KEYCODE_RIGHT || key == InputConstants.KEY_RIGHT || key == 262) {
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[C", true));
+                sendTerminalInput("\033[C");
                 return true;
             } else if (shortcut == InputConstants.KEYCODE_LEFT || key == InputConstants.KEY_LEFT || key == 263) {
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[D", true));
+                sendTerminalInput("\033[D");
                 return true;
             }
 
             // Home / End
             if (shortcut == InputConstants.KEYCODE_HOME || key == InputConstants.KEY_HOME || key == 268) {
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[H", true));
+                sendTerminalInput("\033[H");
                 return true;
             } else if (shortcut == InputConstants.KEYCODE_END || key == InputConstants.KEY_END || key == 269) {
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[F", true));
+                sendTerminalInput("\033[F");
                 return true;
             }
 
             // Page Up / Page Down
             if (shortcut == InputConstants.KEYCODE_PAGEUP || key == InputConstants.KEY_PAGEUP || key == 266) {
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[5~", true));
+                sendTerminalInput("\033[5~");
                 return true;
             } else if (shortcut == InputConstants.KEYCODE_PAGEDOWN || key == InputConstants.KEY_PAGEDOWN || key == 267) {
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[6~", true));
+                sendTerminalInput("\033[6~");
                 return true;
             }
 
@@ -382,7 +388,7 @@ public class SystemBlockScreen extends Screen {
                     String cmd = this.commandInput.getValue();
                     if (!cmd.isEmpty()) {
                         saveCommand();
-                        ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "START"));
+                        ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "COMMAND", "START"));
                         return true;
                     }
                 }
@@ -439,73 +445,140 @@ public class SystemBlockScreen extends Screen {
         graphics.pose().translate(bgX + 4, bgY + 3);
         graphics.pose().scale(fontScale, fontScale);
 
-        int gridCols = terminalGrid.getCols();
-        int gridRows = terminalGrid.getRows();
-
-        // Render rows inside the terminal screen using transformed coordinates
         int lineHeight = this.font.lineHeight; // 9
         float virtualH = (bgH - 6) / fontScale;
         float virtualW = (bgW - 8) / fontScale;
-        int maxVisibleRows = Math.min(gridRows, Math.max(1, (int) (virtualH / lineHeight)));
+        int spaceW = Math.max(1, this.font.width(" "));
 
-        // Ensure the cursor row is always visible within the rendered window
-        int curY = terminalGrid.getCursorY();
-        int startRow = 0;
-        if (curY >= maxVisibleRows) {
-            startRow = Math.min(gridRows - maxVisibleRows, curY - maxVisibleRows + 1);
-        }
+        synchronized (terminalGrid) {
+            int gridCols = terminalGrid.getCols();
+            int gridRows = terminalGrid.getRows();
+            int curY = terminalGrid.getCursorY();
+            int curX = terminalGrid.getCursorX();
+            boolean cursorVisible = terminalGrid.isCursorVisible();
+            boolean showBlinkCursor = cursorVisible && (System.currentTimeMillis() % 1000 < 500);
 
-        for (int r = startRow; r < gridRows; r++) {
-            int drawY = (r - startRow) * lineHeight;
-            if (drawY + lineHeight > virtualH) break;
-
-            int curX = 0;
-            StringBuilder chunkSb = new StringBuilder();
-            int chunkStartX = 0;
-            int currentChunkFg = -1;
-
-            for (int c = 0; c < gridCols; c++) {
-                String cell = terminalGrid.getCell(r, c);
-                int fg = terminalGrid.getFg(r, c);
-                int bg = terminalGrid.getBg(r, c);
-                int cellW = Math.max(1, this.font.width(cell));
-
-                if (curX + cellW > virtualW) break;
-
-                // Draw cell background if specified
-                if ((bg & 0xFF000000) != 0) {
-                    graphics.fill(curX, drawY, curX + cellW, drawY + lineHeight, bg);
-                }
-
-                if (currentChunkFg == -1) {
-                    currentChunkFg = fg;
-                    chunkStartX = curX;
-                } else if (fg != currentChunkFg) {
-                    graphics.text(this.font, chunkSb.toString(), chunkStartX, drawY, currentChunkFg, false);
-                    chunkSb.setLength(0);
-                    currentChunkFg = fg;
-                    chunkStartX = curX;
-                }
-
-                chunkSb.append(cell);
-                curX += cellW;
+            int maxVisibleRows = Math.min(gridRows, Math.max(1, (int) (virtualH / lineHeight)));
+            int startRow = 0;
+            if (curY >= maxVisibleRows) {
+                startRow = Math.min(gridRows - maxVisibleRows, curY - maxVisibleRows + 1);
             }
 
-            if (chunkSb.length() > 0) {
-                graphics.text(this.font, chunkSb.toString(), chunkStartX, drawY, currentChunkFg != -1 ? currentChunkFg : 0xFF00FF88, false);
-            }
+            String[][] cells = terminalGrid.getRawCells();
+            int[][] fgColors = terminalGrid.getRawFg();
+            int[][] bgColors = terminalGrid.getRawBg();
 
-            // Blinking cursor in transformed space
-            if (terminalGrid.isCursorVisible() && r == curY && (System.currentTimeMillis() % 1000 < 500)) {
-                int cX = terminalGrid.getCursorX();
-                int cursorVirtualX = 0;
-                for (int c = 0; c < cX && c < gridCols; c++) {
-                    cursorVirtualX += Math.max(1, this.font.width(terminalGrid.getCell(r, c)));
+            for (int r = startRow; r < gridRows; r++) {
+                int drawY = (r - startRow) * lineHeight;
+                if (drawY + lineHeight > virtualH) break;
+
+                String[] rowCells = (cells != null && r < cells.length) ? cells[r] : null;
+                int[] rowFg = (fgColors != null && r < fgColors.length) ? fgColors[r] : null;
+                int[] rowBg = (bgColors != null && r < bgColors.length) ? bgColors[r] : null;
+
+                if (rowCells == null || rowFg == null || rowBg == null) continue;
+
+                // Find the last column that has actual visual content (character or background)
+                int lastActiveCol = -1;
+                for (int c = Math.min(gridCols, rowCells.length) - 1; c >= 0; c--) {
+                    int bg = rowBg[c];
+                    String cell = rowCells[c];
+                    if ((bg & 0xFF000000) != 0 || (cell != null && !cell.equals(" "))) {
+                        lastActiveCol = c;
+                        break;
+                    }
                 }
-                String atCursor = (cX >= 0 && cX < gridCols) ? terminalGrid.getCell(r, cX) : " ";
-                int cursorW = Math.max(5, this.font.width(atCursor));
-                if (cursorVirtualX + cursorW <= virtualW) {
-                    graphics.fill(cursorVirtualX, drawY, cursorVirtualX + cursorW, drawY + lineHeight, 0xFF00FF88);
+
+                boolean isCursorRow = (r == curY && showBlinkCursor && curX >= 0 && curX < gridCols);
+
+                // If row has no text/background content and no cursor, skip it entirely (0 GPU calls)
+                if (lastActiveCol == -1 && !isCursorRow) {
+                    continue;
+                }
+
+                int renderLimitCol = Math.max(lastActiveCol, isCursorRow ? curX : -1);
+
+                // Pass 1: Contiguous background run batching
+                int currentX = 0;
+                int spanStartX = 0;
+                int currentSpanBg = 0;
+
+                for (int c = 0; c <= renderLimitCol && currentX < virtualW; c++) {
+                    String cell = (c < rowCells.length) ? rowCells[c] : " ";
+                    int cellW = (cell == null || cell.equals(" ")) ? spaceW : Math.max(1, this.font.width(cell));
+                    int bg = (c < rowBg.length) ? rowBg[c] : 0;
+                    boolean hasBg = (bg & 0xFF000000) != 0;
+
+                    if (hasBg) {
+                        if ((currentSpanBg & 0xFF000000) == 0) {
+                            currentSpanBg = bg;
+                            spanStartX = currentX;
+                        } else if (bg != currentSpanBg) {
+                            graphics.fill(spanStartX, drawY, currentX, drawY + lineHeight, currentSpanBg);
+                            currentSpanBg = bg;
+                            spanStartX = currentX;
+                        }
+                    } else {
+                        if ((currentSpanBg & 0xFF000000) != 0) {
+                            graphics.fill(spanStartX, drawY, currentX, drawY + lineHeight, currentSpanBg);
+                            currentSpanBg = 0;
+                        }
+                    }
+                    currentX += cellW;
+                }
+                if ((currentSpanBg & 0xFF000000) != 0) {
+                    graphics.fill(spanStartX, drawY, currentX, drawY + lineHeight, currentSpanBg);
+                }
+
+                // Pass 2: Foreground text batching by color
+                currentX = 0;
+                StringBuilder chunkSb = new StringBuilder();
+                int chunkStartX = 0;
+                int currentChunkFg = -1;
+                int cursorVirtualX = -1;
+                int cursorVirtualW = spaceW;
+
+                for (int c = 0; c <= renderLimitCol && currentX < virtualW; c++) {
+                    String cell = (c < rowCells.length) ? rowCells[c] : " ";
+                    int cellW = (cell == null || cell.equals(" ")) ? spaceW : Math.max(1, this.font.width(cell));
+                    int fg = (c < rowFg.length) ? rowFg[c] : TerminalGrid.DEFAULT_FG;
+
+                    if (isCursorRow && c == curX) {
+                        cursorVirtualX = currentX;
+                        cursorVirtualW = Math.max(5, cellW);
+                    }
+
+                    if (c <= lastActiveCol) {
+                        if (currentChunkFg == -1) {
+                            currentChunkFg = fg;
+                            chunkStartX = currentX;
+                        } else if (fg != currentChunkFg) {
+                            if (chunkSb.length() > 0) {
+                                graphics.text(this.font, chunkSb.toString(), chunkStartX, drawY, currentChunkFg, false);
+                                chunkSb.setLength(0);
+                            }
+                            currentChunkFg = fg;
+                            chunkStartX = currentX;
+                        }
+                        chunkSb.append(cell != null ? cell : " ");
+                    } else {
+                        if (chunkSb.length() > 0) {
+                            graphics.text(this.font, chunkSb.toString(), chunkStartX, drawY, currentChunkFg != -1 ? currentChunkFg : TerminalGrid.DEFAULT_FG, false);
+                            chunkSb.setLength(0);
+                            currentChunkFg = -1;
+                        }
+                    }
+
+                    currentX += cellW;
+                }
+
+                if (chunkSb.length() > 0) {
+                    graphics.text(this.font, chunkSb.toString(), chunkStartX, drawY, currentChunkFg != -1 ? currentChunkFg : TerminalGrid.DEFAULT_FG, false);
+                }
+
+                // Pass 3: Draw cursor if on this row
+                if (isCursorRow && cursorVirtualX != -1 && cursorVirtualX + cursorVirtualW <= virtualW) {
+                    graphics.fill(cursorVirtualX, drawY, cursorVirtualX + cursorVirtualW, drawY + lineHeight, 0xFF00FF88);
                 }
             }
         }

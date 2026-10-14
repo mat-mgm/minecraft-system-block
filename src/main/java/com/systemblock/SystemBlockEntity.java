@@ -198,26 +198,30 @@ public class SystemBlockEntity extends BlockEntity {
     }
 
     public void sendInputToProcess(String input) {
-        sendInputToProcess(input, false);
+        sendInputToProcess(this.mode, input, false);
     }
 
     public void sendInputToProcess(String input, boolean raw) {
+        sendInputToProcess(this.mode, input, raw);
+    }
+
+    public void sendInputToProcess(String targetMode, String input, boolean raw) {
         if (input == null) return;
-        boolean isTerminal = "TERMINAL".equals(this.mode);
+        boolean isTerminal = "TERMINAL".equals(targetMode);
 
         if (isTerminal) {
             if (!isTerminalRunning()) {
-                startProcess(null);
+                startProcess("TERMINAL", null);
             }
             byte[] bytes = input.getBytes(StandardCharsets.UTF_8);
             terminalStdinQueue.offer(bytes);
         } else {
             if (!isCommandRunning()) {
                 if (raw) {
-                    startProcess(null);
+                    startProcess("COMMAND", null);
                 } else {
                     appendLog("COMMAND", "> " + input + "\n");
-                    startProcess(input);
+                    startProcess("COMMAND", input);
                     return;
                 }
             }
@@ -241,15 +245,12 @@ public class SystemBlockEntity extends BlockEntity {
         java.util.concurrent.BlockingQueue<byte[]> q = isTerminal ? terminalStdinQueue : commandStdinQueue;
 
         if (p != null && p.isAlive()) {
-            appendLog(targetMode, "[Sending SIGINT / terminating process...]\n");
             q.clear();
             q.offer(new byte[] { 3 }); // ASCII 3 = Ctrl+C
             try {
                 p.toHandle().descendants().forEach(ProcessHandle::destroy);
                 p.destroy();
             } catch (Exception ignored) {}
-        } else {
-            appendLog(targetMode, "[No active " + targetMode.toLowerCase() + " process to interrupt]\n");
         }
     }
 
@@ -263,7 +264,6 @@ public class SystemBlockEntity extends BlockEntity {
         java.util.concurrent.BlockingQueue<byte[]> q = isTerminal ? terminalStdinQueue : commandStdinQueue;
 
         if (p != null) {
-            appendLog(targetMode, "[Killing " + targetMode.toLowerCase() + " process tree (SIGKILL)...]\n");
             q.clear();
             try {
                 p.toHandle().descendants().forEach(ProcessHandle::destroyForcibly);
@@ -276,8 +276,6 @@ public class SystemBlockEntity extends BlockEntity {
             } else {
                 commandProcess = null;
             }
-        } else {
-            appendLog(targetMode, "[No active " + targetMode.toLowerCase() + " process to kill]\n");
         }
     }
 
@@ -287,13 +285,14 @@ public class SystemBlockEntity extends BlockEntity {
     }
 
     public synchronized void startProcess(String cmdToRun) {
-        final boolean isTerminalMode = "TERMINAL".equals(this.mode);
+        startProcess(this.mode, cmdToRun);
+    }
+
+    public synchronized void startProcess(String targetMode, String cmdToRun) {
+        final boolean isTerminalMode = "TERMINAL".equals(targetMode);
         final String processTargetMode = isTerminalMode ? "TERMINAL" : "COMMAND";
 
         if (isProcessRunning(processTargetMode)) {
-            if (cmdToRun != null && !cmdToRun.isEmpty()) {
-                appendLog(processTargetMode, "[Notice: A process is already running in " + processTargetMode + " mode. Interrupt or wait before starting a new one]\n");
-            }
             return;
         }
 
@@ -312,12 +311,10 @@ public class SystemBlockEntity extends BlockEntity {
 
         final String targetCmd = rawCmd;
         if (targetCmd.isEmpty()) {
-            appendLog(processTargetMode, "[No command configured to execute]\n");
             return;
         }
 
         final BlockPos pos = this.worldPosition;
-        appendLog(processTargetMode, "[Starting " + (isTerminalMode ? "session" : "command") + " in ~ at " + pos.getX() + "," + pos.getY() + "," + pos.getZ() + ": " + targetCmd + "]\n");
 
         if (this.level instanceof ServerLevel sLevel) {
             this.ipcManager.start(sLevel);
@@ -468,7 +465,9 @@ public class SystemBlockEntity extends BlockEntity {
                 }
 
                 int exitCode = process.waitFor();
-                appendLog(processTargetMode, "\n[" + (isTerminalMode ? "Shell" : "Command") + " exited with code: " + exitCode + "]\n");
+                if (!isTerminalMode && exitCode != 0) {
+                    appendLog(processTargetMode, "\n[Command exited with code: " + exitCode + "]\n");
+                }
 
                 synchronized (this) {
                     if (isTerminalMode && this.terminalProcess == process) {
@@ -488,8 +487,12 @@ public class SystemBlockEntity extends BlockEntity {
                     });
                 }
             } catch (Exception e) {
-                LOGGER.severe("[SystemBlockEntity] Failed: " + e.getMessage());
-                appendLog(processTargetMode, "[Error: " + e.getMessage() + "]\n");
+                boolean isStreamClosed = (e instanceof IOException)
+                        || (e.getMessage() != null && (e.getMessage().contains("Stream closed") || e.getMessage().contains("Pipe closed")));
+                if (!isStreamClosed) {
+                    LOGGER.severe("[SystemBlockEntity] Failed: " + e.getMessage());
+                    appendLog(processTargetMode, "[Error: " + e.getMessage() + "]\n");
+                }
                 synchronized (this) {
                     if (isTerminalMode) {
                         this.terminalProcess = null;
