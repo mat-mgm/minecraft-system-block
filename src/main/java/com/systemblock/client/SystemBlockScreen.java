@@ -138,6 +138,7 @@ public class SystemBlockScreen extends Screen {
                     ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "TOGGLE_MODE"));
                     if ("TERMINAL".equals(this.currentMode)) {
                         ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "START"));
+                        adaptTerminalDimensions();
                     }
                 }
         ).bounds(startX, bottomY, btnWidth, 20).build());
@@ -148,15 +149,19 @@ public class SystemBlockScreen extends Screen {
                 button -> ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "INTERRUPT"))
         ).bounds(startX + (btnWidth + gap), bottomY, btnWidth, 20).build());
 
-        // Zoom button
+        // Zoom button: cycling through multiple sub-scale modes down to 0.25x for massive terminal applications
         this.zoomButton = this.addRenderableWidget(Button.builder(
                 Component.literal("Zoom: " + fontScale + "x"),
                 button -> {
-                    if (fontScale == 0.65f) fontScale = 0.8f;
-                    else if (fontScale == 0.8f) fontScale = 1.0f;
-                    else if (fontScale == 1.0f) fontScale = 0.5f;
+                    if (fontScale == 0.65f) fontScale = 0.5f;
+                    else if (fontScale == 0.5f) fontScale = 0.4f;
+                    else if (fontScale == 0.4f) fontScale = 0.3f;
+                    else if (fontScale == 0.3f) fontScale = 0.25f;
+                    else if (fontScale == 0.25f) fontScale = 1.0f;
+                    else if (fontScale == 1.0f) fontScale = 0.8f;
                     else fontScale = 0.65f;
                     button.setMessage(Component.literal("Zoom: " + fontScale + "x"));
+                    adaptTerminalDimensions();
                 }
         ).bounds(startX + (btnWidth + gap) * 2, bottomY, btnWidth, 20).build());
 
@@ -186,17 +191,29 @@ public class SystemBlockScreen extends Screen {
 
         updateModeVisibility();
 
-        // If in Terminal mode, ensure server starts/connects to the interactive host shell
+        // If in Terminal mode, ensure server starts/connects to the interactive host shell and adapts grid dimensions
         if ("TERMINAL".equals(currentMode)) {
             ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "START"));
             if (this.minecraft != null && this.minecraft.textInputManager() != null) {
                 this.minecraft.textInputManager().startTextInput(this);
             }
+            adaptTerminalDimensions();
         }
 
         // Ensure keyboard focus defaults to command input bar when entering Command mode
         if ("COMMAND".equals(currentMode)) {
             this.setInitialFocus(this.commandInput);
+        }
+    }
+
+    private void adaptTerminalDimensions() {
+        if ("TERMINAL".equals(currentMode)) {
+            float virtualW = (inputWidth - 8) / fontScale;
+            float virtualH = (terminalHeight - 6) / fontScale;
+            int targetCols = Math.max(80, Math.min(260, (int) (virtualW / 6)));
+            int targetRows = Math.max(24, Math.min(100, (int) (virtualH / 9)));
+            terminalGrid.resize(targetCols, targetRows);
+            ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[8;" + targetRows + ";" + targetCols + "t", true));
         }
     }
 
@@ -422,69 +439,71 @@ public class SystemBlockScreen extends Screen {
         graphics.pose().translate(bgX + 4, bgY + 3);
         graphics.pose().scale(fontScale, fontScale);
 
+        int gridCols = terminalGrid.getCols();
+        int gridRows = terminalGrid.getRows();
+
         // Render rows inside the terminal screen using transformed coordinates
         int lineHeight = this.font.lineHeight; // 9
         float virtualH = (bgH - 6) / fontScale;
         float virtualW = (bgW - 8) / fontScale;
-        int maxVisibleRows = Math.min(TerminalGrid.ROWS, Math.max(1, (int) (virtualH / lineHeight)));
+        int maxVisibleRows = Math.min(gridRows, Math.max(1, (int) (virtualH / lineHeight)));
 
         // Ensure the cursor row is always visible within the rendered window
         int curY = terminalGrid.getCursorY();
         int startRow = 0;
         if (curY >= maxVisibleRows) {
-            startRow = Math.min(TerminalGrid.ROWS - maxVisibleRows, curY - maxVisibleRows + 1);
+            startRow = Math.min(gridRows - maxVisibleRows, curY - maxVisibleRows + 1);
         }
 
-        for (int r = startRow; r < TerminalGrid.ROWS; r++) {
+        for (int r = startRow; r < gridRows; r++) {
             int drawY = (r - startRow) * lineHeight;
             if (drawY + lineHeight > virtualH) break;
 
-            // Build line text and render with ANSI colors
-            StringBuilder lineSb = new StringBuilder();
-            int currentChunkFg = -1;
+            int curX = 0;
+            StringBuilder chunkSb = new StringBuilder();
             int chunkStartX = 0;
+            int currentChunkFg = -1;
 
-            for (int c = 0; c < TerminalGrid.COLS; c++) {
-                char ch = terminalGrid.getChar(r, c);
+            for (int c = 0; c < gridCols; c++) {
+                String cell = terminalGrid.getCell(r, c);
                 int fg = terminalGrid.getFg(r, c);
                 int bg = terminalGrid.getBg(r, c);
+                int cellW = Math.max(1, this.font.width(cell));
 
-                int charW = this.font.width(String.valueOf(ch));
-                // Stop rendering if reaching right boundary
-                if (chunkStartX + this.font.width(lineSb.toString()) + charW > virtualW) {
-                    break;
-                }
+                if (curX + cellW > virtualW) break;
 
-                // If background color is specified, fill cell in transformed space
+                // Draw cell background if specified
                 if ((bg & 0xFF000000) != 0) {
-                    graphics.fill(chunkStartX + this.font.width(lineSb.toString()), drawY,
-                            chunkStartX + this.font.width(lineSb.toString()) + Math.max(5, charW), drawY + lineHeight, bg);
+                    graphics.fill(curX, drawY, curX + cellW, drawY + lineHeight, bg);
                 }
 
-                if (currentChunkFg == -1) currentChunkFg = fg;
-
-                if (fg != currentChunkFg && lineSb.length() > 0) {
-                    graphics.text(this.font, lineSb.toString(), chunkStartX, drawY, currentChunkFg, false);
-                    chunkStartX += this.font.width(lineSb.toString());
-                    lineSb.setLength(0);
+                if (currentChunkFg == -1) {
                     currentChunkFg = fg;
+                    chunkStartX = curX;
+                } else if (fg != currentChunkFg) {
+                    graphics.text(this.font, chunkSb.toString(), chunkStartX, drawY, currentChunkFg, false);
+                    chunkSb.setLength(0);
+                    currentChunkFg = fg;
+                    chunkStartX = curX;
                 }
-                lineSb.append(ch);
+
+                chunkSb.append(cell);
+                curX += cellW;
             }
 
-            if (lineSb.length() > 0) {
-                graphics.text(this.font, lineSb.toString(), chunkStartX, drawY, currentChunkFg != -1 ? currentChunkFg : 0xFF00FF88, false);
+            if (chunkSb.length() > 0) {
+                graphics.text(this.font, chunkSb.toString(), chunkStartX, drawY, currentChunkFg != -1 ? currentChunkFg : 0xFF00FF88, false);
             }
 
             // Blinking cursor in transformed space
             if (terminalGrid.isCursorVisible() && r == curY && (System.currentTimeMillis() % 1000 < 500)) {
                 int cX = terminalGrid.getCursorX();
                 int cursorVirtualX = 0;
-                for (int c = 0; c < cX && c < TerminalGrid.COLS; c++) {
-                    cursorVirtualX += this.font.width(String.valueOf(terminalGrid.getChar(r, c)));
+                for (int c = 0; c < cX && c < gridCols; c++) {
+                    cursorVirtualX += Math.max(1, this.font.width(terminalGrid.getCell(r, c)));
                 }
-                char atCursor = (cX >= 0 && cX < TerminalGrid.COLS) ? terminalGrid.getChar(r, cX) : ' ';
-                int cursorW = Math.max(5, this.font.width(String.valueOf(atCursor)));
+                String atCursor = (cX >= 0 && cX < gridCols) ? terminalGrid.getCell(r, cX) : " ";
+                int cursorW = Math.max(5, this.font.width(atCursor));
                 if (cursorVirtualX + cursorW <= virtualW) {
                     graphics.fill(cursorVirtualX, drawY, cursorVirtualX + cursorW, drawY + lineHeight, 0xFF00FF88);
                 }

@@ -32,10 +32,13 @@ public class SystemBlockEntity extends BlockEntity {
     private final LinkedList<String> terminalLogBuffer = new LinkedList<>();
     private static final int MAX_BUFFER_LINES = 300;
 
-    // Active host process & stdin streams
-    private Process activeProcess = null;
-    private final java.util.concurrent.BlockingQueue<byte[]> stdinQueue = new java.util.concurrent.LinkedBlockingQueue<>(2048);
-    private final java.util.concurrent.atomic.AtomicLong totalBytesOutput = new java.util.concurrent.atomic.AtomicLong(0);
+    // Active host processes & stdin streams (independent for Command vs Terminal mode)
+    private Process commandProcess = null;
+    private Process terminalProcess = null;
+    private final java.util.concurrent.BlockingQueue<byte[]> commandStdinQueue = new java.util.concurrent.LinkedBlockingQueue<>(2048);
+    private final java.util.concurrent.BlockingQueue<byte[]> terminalStdinQueue = new java.util.concurrent.LinkedBlockingQueue<>(2048);
+    private final java.util.concurrent.atomic.AtomicLong commandTotalBytesOutput = new java.util.concurrent.atomic.AtomicLong(0);
+    private final java.util.concurrent.atomic.AtomicLong terminalTotalBytesOutput = new java.util.concurrent.atomic.AtomicLong(0);
 
     // IPC manager for agent redstone signals (mc-signal helper & signal.cmd)
     private final com.systemblock.ipc.BlockIpcManager ipcManager;
@@ -48,7 +51,7 @@ public class SystemBlockEntity extends BlockEntity {
     @Override
     public void setRemoved() {
         super.setRemoved();
-        killProcess();
+        killAllProcesses();
         if (ipcManager != null) {
             ipcManager.stop();
         }
@@ -104,13 +107,29 @@ public class SystemBlockEntity extends BlockEntity {
         return "TERMINAL".equals(this.mode) ? getTerminalLogs() : getCommandLogs();
     }
 
+    public synchronized boolean isCommandRunning() {
+        return commandProcess != null && commandProcess.isAlive();
+    }
+
+    public synchronized boolean isTerminalRunning() {
+        return terminalProcess != null && terminalProcess.isAlive();
+    }
+
     public synchronized boolean isProcessRunning() {
-        return activeProcess != null && activeProcess.isAlive();
+        return "TERMINAL".equals(this.mode) ? isTerminalRunning() : isCommandRunning();
+    }
+
+    public synchronized boolean isProcessRunning(String targetMode) {
+        return "TERMINAL".equals(targetMode) ? isTerminalRunning() : isCommandRunning();
     }
 
     private synchronized void appendLog(String targetMode, String line) {
         if (line == null || line.isEmpty()) return;
-        totalBytesOutput.addAndGet(line.length());
+        if ("COMMAND".equals(targetMode)) {
+            commandTotalBytesOutput.addAndGet(line.length());
+        } else {
+            terminalTotalBytesOutput.addAndGet(line.length());
+        }
 
         LinkedList<String> buffer = "COMMAND".equals(targetMode) ? commandLogBuffer : terminalLogBuffer;
         while (buffer.size() >= MAX_BUFFER_LINES) {
@@ -184,71 +203,102 @@ public class SystemBlockEntity extends BlockEntity {
 
     public void sendInputToProcess(String input, boolean raw) {
         if (input == null) return;
+        boolean isTerminal = "TERMINAL".equals(this.mode);
 
-        if (!isProcessRunning()) {
-            if (raw) {
+        if (isTerminal) {
+            if (!isTerminalRunning()) {
                 startProcess(null);
-            } else {
-                appendLog("COMMAND", "> " + input + "\n");
-                startProcess(input);
-                return;
             }
+            byte[] bytes = input.getBytes(StandardCharsets.UTF_8);
+            terminalStdinQueue.offer(bytes);
+        } else {
+            if (!isCommandRunning()) {
+                if (raw) {
+                    startProcess(null);
+                } else {
+                    appendLog("COMMAND", "> " + input + "\n");
+                    startProcess(input);
+                    return;
+                }
+            }
+            byte[] bytes = (raw || input.endsWith("\n"))
+                    ? input.getBytes(StandardCharsets.UTF_8)
+                    : (input + "\n").getBytes(StandardCharsets.UTF_8);
+            if (!raw) {
+                appendLog("COMMAND", "> " + input + "\n");
+            }
+            commandStdinQueue.offer(bytes);
         }
-
-        byte[] bytes = (raw || input.endsWith("\n"))
-                ? input.getBytes(StandardCharsets.UTF_8)
-                : (input + "\n").getBytes(StandardCharsets.UTF_8);
-
-        if (!raw) {
-            appendLog("COMMAND", "> " + input + "\n");
-        }
-
-        // Asynchronous non-blocking stdin queue write — prevents Minecraft server tick freezes
-        stdinQueue.offer(bytes);
     }
 
     public synchronized void interruptProcess() {
-        String activeMode = this.mode;
-        if (activeProcess != null && activeProcess.isAlive()) {
-            appendLog(activeMode, "[Sending SIGINT / terminating process...]\n");
-            stdinQueue.clear();
-            stdinQueue.offer(new byte[] { 3 }); // ASCII 3 = Ctrl+C
+        interruptProcess(this.mode);
+    }
+
+    public synchronized void interruptProcess(String targetMode) {
+        boolean isTerminal = "TERMINAL".equals(targetMode);
+        Process p = isTerminal ? terminalProcess : commandProcess;
+        java.util.concurrent.BlockingQueue<byte[]> q = isTerminal ? terminalStdinQueue : commandStdinQueue;
+
+        if (p != null && p.isAlive()) {
+            appendLog(targetMode, "[Sending SIGINT / terminating process...]\n");
+            q.clear();
+            q.offer(new byte[] { 3 }); // ASCII 3 = Ctrl+C
             try {
-                activeProcess.toHandle().descendants().forEach(ProcessHandle::destroy);
-                activeProcess.destroy();
+                p.toHandle().descendants().forEach(ProcessHandle::destroy);
+                p.destroy();
             } catch (Exception ignored) {}
         } else {
-            appendLog(activeMode, "[No active process to interrupt]\n");
+            appendLog(targetMode, "[No active " + targetMode.toLowerCase() + " process to interrupt]\n");
         }
     }
 
     public synchronized void killProcess() {
-        String activeMode = this.mode;
-        if (activeProcess != null) {
-            appendLog(activeMode, "[Killing process tree (SIGKILL)...]\n");
-            stdinQueue.clear();
+        killProcess(this.mode);
+    }
+
+    public synchronized void killProcess(String targetMode) {
+        boolean isTerminal = "TERMINAL".equals(targetMode);
+        Process p = isTerminal ? terminalProcess : commandProcess;
+        java.util.concurrent.BlockingQueue<byte[]> q = isTerminal ? terminalStdinQueue : commandStdinQueue;
+
+        if (p != null) {
+            appendLog(targetMode, "[Killing " + targetMode.toLowerCase() + " process tree (SIGKILL)...]\n");
+            q.clear();
             try {
-                activeProcess.toHandle().descendants().forEach(ProcessHandle::destroyForcibly);
+                p.toHandle().descendants().forEach(ProcessHandle::destroyForcibly);
             } catch (Exception ignored) {}
             try {
-                activeProcess.destroyForcibly();
+                p.destroyForcibly();
             } catch (Exception ignored) {}
-            activeProcess = null;
+            if (isTerminal) {
+                terminalProcess = null;
+            } else {
+                commandProcess = null;
+            }
         } else {
-            appendLog(activeMode, "[No active process to kill]\n");
+            appendLog(targetMode, "[No active " + targetMode.toLowerCase() + " process to kill]\n");
         }
+    }
+
+    public synchronized void killAllProcesses() {
+        killProcess("COMMAND");
+        killProcess("TERMINAL");
     }
 
     public synchronized void startProcess(String cmdToRun) {
         final boolean isTerminalMode = "TERMINAL".equals(this.mode);
         final String processTargetMode = isTerminalMode ? "TERMINAL" : "COMMAND";
 
-        if (isProcessRunning()) {
+        if (isProcessRunning(processTargetMode)) {
             if (cmdToRun != null && !cmdToRun.isEmpty()) {
-                appendLog(processTargetMode, "[Notice: A process is already running. Interrupt or wait before starting a new one]\n");
+                appendLog(processTargetMode, "[Notice: A process is already running in " + processTargetMode + " mode. Interrupt or wait before starting a new one]\n");
             }
             return;
         }
+
+        final java.util.concurrent.BlockingQueue<byte[]> stdinQueue = isTerminalMode ? terminalStdinQueue : commandStdinQueue;
+        final java.util.concurrent.atomic.AtomicLong totalBytesOutput = isTerminalMode ? terminalTotalBytesOutput : commandTotalBytesOutput;
 
         stdinQueue.clear();
         totalBytesOutput.set(0);
@@ -353,14 +403,18 @@ public class SystemBlockEntity extends BlockEntity {
 
                 Process process = pb.start();
                 synchronized (this) {
-                    this.activeProcess = process;
+                    if (isTerminalMode) {
+                        this.terminalProcess = process;
+                    } else {
+                        this.commandProcess = process;
+                    }
                 }
 
                 // Dedicated async stdin writer thread - guarantees Minecraft never freezes waiting on stdin
                 final OutputStream stdinStream = process.getOutputStream();
                 Thread stdinWriterThread = new Thread(() -> {
                     try {
-                        while (activeProcess == process && process.isAlive()) {
+                        while (isProcessActive(process, isTerminalMode) && process.isAlive()) {
                             byte[] chunk = stdinQueue.poll(200, java.util.concurrent.TimeUnit.MILLISECONDS);
                             if (chunk != null && chunk.length > 0) {
                                 stdinStream.write(chunk);
@@ -368,7 +422,7 @@ public class SystemBlockEntity extends BlockEntity {
                             }
                         }
                     } catch (Exception ignored) {}
-                }, "SystemBlock-Stdin-" + pos.getX() + "-" + pos.getY() + "-" + pos.getZ());
+                }, "SystemBlock-Stdin-" + processTargetMode + "-" + pos.getX() + "-" + pos.getY() + "-" + pos.getZ());
                 stdinWriterThread.setDaemon(true);
                 stdinWriterThread.start();
 
@@ -376,19 +430,19 @@ public class SystemBlockEntity extends BlockEntity {
                 Thread watchdogThread = new Thread(() -> {
                     long startTime = System.currentTimeMillis();
                     long lastBytes = 0;
-                    while (activeProcess == process && process.isAlive()) {
+                    while (isProcessActive(process, isTerminalMode) && process.isAlive()) {
                         try {
                             Thread.sleep(500);
                         } catch (InterruptedException e) {
                             break;
                         }
-                        if (activeProcess != process || !process.isAlive()) break;
+                        if (!isProcessActive(process, isTerminalMode) || !process.isAlive()) break;
 
                         // Check 1: Output flood freeze protection (> 2MB in 500ms)
                         long currentBytes = totalBytesOutput.get();
                         if (currentBytes - lastBytes > 2_000_000) {
                             appendLog(processTargetMode, "\n[Freeze Watchdog: Terminating process due to excessive output flood (>4MB/s)]\n");
-                            killProcess();
+                            killProcess(processTargetMode);
                             break;
                         }
                         lastBytes = currentBytes;
@@ -396,11 +450,11 @@ public class SystemBlockEntity extends BlockEntity {
                         // Check 2: Single command timeout (kill if unresponsive for > 30s)
                         if (!isTerminalMode && System.currentTimeMillis() - startTime > 30_000) {
                             appendLog(processTargetMode, "\n[Freeze Watchdog: Command timed out after 30 seconds. Terminating process]\n");
-                            killProcess();
+                            killProcess(processTargetMode);
                             break;
                         }
                     }
-                }, "SystemBlock-Watchdog-" + pos.getX() + "-" + pos.getY() + "-" + pos.getZ());
+                }, "SystemBlock-Watchdog-" + processTargetMode + "-" + pos.getX() + "-" + pos.getY() + "-" + pos.getZ());
                 watchdogThread.setDaemon(true);
                 watchdogThread.start();
 
@@ -417,8 +471,10 @@ public class SystemBlockEntity extends BlockEntity {
                 appendLog(processTargetMode, "\n[" + (isTerminalMode ? "Shell" : "Command") + " exited with code: " + exitCode + "]\n");
 
                 synchronized (this) {
-                    if (this.activeProcess == process) {
-                        this.activeProcess = null;
+                    if (isTerminalMode && this.terminalProcess == process) {
+                        this.terminalProcess = null;
+                    } else if (!isTerminalMode && this.commandProcess == process) {
+                        this.commandProcess = null;
                     }
                 }
 
@@ -435,18 +491,26 @@ public class SystemBlockEntity extends BlockEntity {
                 LOGGER.severe("[SystemBlockEntity] Failed: " + e.getMessage());
                 appendLog(processTargetMode, "[Error: " + e.getMessage() + "]\n");
                 synchronized (this) {
-                    this.activeProcess = null;
+                    if (isTerminalMode) {
+                        this.terminalProcess = null;
+                    } else {
+                        this.commandProcess = null;
+                    }
                 }
             }
-        }, "SystemBlock-Terminal-" + pos.getX() + "-" + pos.getY() + "-" + pos.getZ());
+        }, "SystemBlock-" + processTargetMode + "-" + pos.getX() + "-" + pos.getY() + "-" + pos.getZ());
         runner.setDaemon(true);
         runner.start();
+    }
+
+    private synchronized boolean isProcessActive(Process p, boolean isTerminalMode) {
+        return isTerminalMode ? (this.terminalProcess == p) : (this.commandProcess == p);
     }
 
     private static String[] buildUnixCommand(String cmd, boolean isMac, boolean isTerminalMode) {
         // In Terminal mode, ALWAYS run within a genuine VT100 / PTY interactive terminal session
         if (isTerminalMode) {
-            String pyScript = "import pty, os, sys, fcntl, struct, threading\n"
+            String pyScript = "import pty, os, sys, fcntl, struct, threading, re\n"
                     + "m, s = pty.openpty()\n"
                     + "try: fcntl.ioctl(m, 0x5414, struct.pack('HHHH', 24, 80, 0, 0))\n"
                     + "except Exception: pass\n"
@@ -466,11 +530,26 @@ public class SystemBlockEntity extends BlockEntity {
                     + "else:\n"
                     + "  os.close(s)\n"
                     + "  def fwd():\n"
+                    + "    buf = b''\n"
                     + "    while True:\n"
                     + "      try:\n"
                     + "        b = os.read(0, 1024)\n"
                     + "        if not b: break\n"
-                    + "        os.write(m, b)\n"
+                    + "        buf += b\n"
+                    + "        while b'\\x1b[8;' in buf and b't' in buf[buf.index(b'\\x1b[8;'):]:\n"
+                    + "          idx = buf.index(b'\\x1b[8;')\n"
+                    + "          end = buf.find(b't', idx)\n"
+                    + "          seq = buf[idx:end+1].decode('latin1', 'ignore')\n"
+                    + "          m_re = re.match(r'\\x1b\\[8;(\\d+);(\\d+)t', seq)\n"
+                    + "          if m_re:\n"
+                    + "            r, c = int(m_re.group(1)), int(m_re.group(2))\n"
+                    + "            try: fcntl.ioctl(m, 0x5414, struct.pack('HHHH', r, c, 0, 0))\n"
+                    + "            except Exception: pass\n"
+                    + "          if idx > 0: os.write(m, buf[:idx])\n"
+                    + "          buf = buf[end+1:]\n"
+                    + "        if buf:\n"
+                    + "          os.write(m, buf)\n"
+                    + "          buf = b''\n"
                     + "      except Exception: break\n"
                     + "  t = threading.Thread(target=fwd, daemon=True)\n"
                     + "  t.start()\n"

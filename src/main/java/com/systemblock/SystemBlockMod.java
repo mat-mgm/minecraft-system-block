@@ -82,10 +82,11 @@ public class SystemBlockMod implements ModInitializer {
                 if (be instanceof SystemBlockEntity systemBlockEntity) {
                     switch (payload.action()) {
                         case "START" -> {
-                            if (!systemBlockEntity.isProcessRunning()) {
+                            String currentMode = systemBlockEntity.getMode();
+                            if (!systemBlockEntity.isProcessRunning(currentMode)) {
                                 systemBlockEntity.startProcess(null);
                             } else {
-                                systemBlockEntity.syncLogsToPlayer(context.player(), systemBlockEntity.getMode());
+                                systemBlockEntity.syncLogsToPlayer(context.player(), currentMode);
                             }
                         }
                         case "INTERRUPT" -> systemBlockEntity.interruptProcess();
@@ -100,7 +101,7 @@ public class SystemBlockMod implements ModInitializer {
                         case "TOGGLE_MODE" -> {
                             String next = "COMMAND".equals(systemBlockEntity.getMode()) ? "TERMINAL" : "COMMAND";
                             systemBlockEntity.setMode(next);
-                            if ("TERMINAL".equals(next) && !systemBlockEntity.isProcessRunning()) {
+                            if ("TERMINAL".equals(next) && !systemBlockEntity.isProcessRunning("TERMINAL")) {
                                 systemBlockEntity.startProcess(null);
                             }
                         }
