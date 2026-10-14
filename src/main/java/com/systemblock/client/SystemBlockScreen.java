@@ -68,7 +68,7 @@ public class SystemBlockScreen extends Screen {
     @Override
     protected void init() {
         int centerX = this.width / 2;
-        this.inputWidth = Math.min(420, this.width - 24);
+        this.inputWidth = Math.max(320, Math.min(580, this.width - 24));
         this.startX = centerX - inputWidth / 2;
 
         this.terminalY = 24;
@@ -268,8 +268,13 @@ public class SystemBlockScreen extends Screen {
                 return true;
             }
 
-            // Consume all other keys to prevent Minecraft inventory key from closing the screen
-            return true;
+            // Block inventory key from closing the terminal
+            if (this.minecraft != null && this.minecraft.options.keyInventory.matches(keyEvent)) {
+                return true;
+            }
+
+            // Allow normal character event processing
+            return super.keyPressed(keyEvent);
         }
 
         // Single Command mode input handling
@@ -308,7 +313,7 @@ public class SystemBlockScreen extends Screen {
         int centerX = this.width / 2;
         graphics.centeredText(this.font, TITLE, centerX, 10, 0xFF55FFAA);
 
-        // If in Live TUI Agent mode: render the authentic 80x24 ANSI grid
+        // If in Terminal mode: render the authentic 80x24 ANSI grid
         if ("TERMINAL".equals(currentMode)) {
             renderTuiGrid(graphics);
         }
@@ -324,6 +329,9 @@ public class SystemBlockScreen extends Screen {
         // Outer dark bezel & inner terminal screen
         graphics.fill(bgX - 2, bgY - 2, bgX + bgW + 2, bgY + bgH + 2, 0xFF22252A);
         graphics.fill(bgX, bgY, bgX + bgW, bgY + bgH, 0xFF0D1117);
+
+        // Enable hardware scissoring to strictly prevent any text overflowing out of the terminal box
+        graphics.enableScissor(bgX, bgY, bgX + bgW, bgY + bgH);
 
         // Render rows inside the terminal screen
         // Visible lines budget based on terminalHeight (9px per line in MC font)
@@ -351,9 +359,14 @@ public class SystemBlockScreen extends Screen {
                 int fg = terminalGrid.getFg(r, c);
                 int bg = terminalGrid.getBg(r, c);
 
+                int charW = this.font.width(String.valueOf(ch));
+                // Stop rendering if reaching right boundary
+                if (chunkStartX + this.font.width(lineSb.toString()) + charW > bgX + bgW - 4) {
+                    break;
+                }
+
                 // If background color is specified, fill cell
                 if ((bg & 0xFF000000) != 0) {
-                    int charW = this.font.width(String.valueOf(ch));
                     graphics.fill(chunkStartX + this.font.width(lineSb.toString()), drawY,
                             chunkStartX + this.font.width(lineSb.toString()) + Math.max(5, charW), drawY + lineHeight, bg);
                 }
@@ -382,9 +395,13 @@ public class SystemBlockScreen extends Screen {
                 }
                 char atCursor = (cX >= 0 && cX < TerminalGrid.COLS) ? terminalGrid.getChar(r, cX) : ' ';
                 int cursorW = Math.max(5, this.font.width(String.valueOf(atCursor)));
-                graphics.fill(cursorScreenX, drawY, cursorScreenX + cursorW, drawY + lineHeight, 0xFF00FF88);
+                if (cursorScreenX + cursorW <= bgX + bgW - 2) {
+                    graphics.fill(cursorScreenX, drawY, cursorScreenX + cursorW, drawY + lineHeight, 0xFF00FF88);
+                }
             }
         }
+
+        graphics.disableScissor();
     }
 
     @Override
