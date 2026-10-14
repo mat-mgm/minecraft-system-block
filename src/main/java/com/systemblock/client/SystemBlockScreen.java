@@ -1,5 +1,6 @@
 package com.systemblock.client;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import com.systemblock.SystemBlockEntity;
 import com.systemblock.TerminalControlPayload;
 import com.systemblock.TerminalInputPayload;
@@ -160,6 +161,9 @@ public class SystemBlockScreen extends Screen {
         // If in Terminal mode, ensure server starts/connects to the interactive host shell
         if ("TERMINAL".equals(currentMode)) {
             ClientPlayNetworking.send(new TerminalControlPayload(blockPos, "START"));
+            if (this.minecraft != null && this.minecraft.textInputManager() != null) {
+                this.minecraft.textInputManager().startTextInput(this);
+            }
         }
 
         // Ensure keyboard focus defaults to command input bar when entering Command mode
@@ -180,6 +184,13 @@ public class SystemBlockScreen extends Screen {
         if (this.startRestartButton != null) this.startRestartButton.visible = isCmd;
         if (!isCmd) {
             this.setFocused(null);
+            if (this.minecraft != null && this.minecraft.textInputManager() != null) {
+                this.minecraft.textInputManager().startTextInput(this);
+            }
+        } else {
+            if (this.minecraft != null && this.minecraft.textInputManager() != null) {
+                this.minecraft.textInputManager().stopTextInput(this);
+            }
         }
     }
 
@@ -189,68 +200,17 @@ public class SystemBlockScreen extends Screen {
         ClientPlayNetworking.send(new TerminalInputPayload(blockPos, cmd, false));
     }
 
-    private long lastKeyTime = 0;
-    private String lastKeyChar = null;
-
-    private static String getCharForKeyEvent(net.minecraft.client.input.KeyEvent event) {
-        int key = event.key();
-        boolean shift = event.hasShiftDown();
-
-        // Letters A-Z
-        if (key >= 65 && key <= 90) {
-            char c = (char) key;
-            return shift ? String.valueOf(c) : String.valueOf(Character.toLowerCase(c));
+    @Override
+    public void removed() {
+        super.removed();
+        if (this.minecraft != null && this.minecraft.textInputManager() != null) {
+            this.minecraft.textInputManager().stopTextInput(this);
         }
+    }
 
-        // Numbers 0-9
-        if (key >= 48 && key <= 57) {
-            if (!shift) {
-                return String.valueOf((char) key);
-            } else {
-                return switch (key) {
-                    case 49 -> "!";
-                    case 50 -> "@";
-                    case 51 -> "#";
-                    case 52 -> "$";
-                    case 53 -> "%";
-                    case 54 -> "^";
-                    case 55 -> "&";
-                    case 56 -> "*";
-                    case 57 -> "(";
-                    case 48 -> ")";
-                    default -> "";
-                };
-            }
-        }
-
-        // Numpad 0-9
-        if (key >= 320 && key <= 329) {
-            return String.valueOf((char) ('0' + (key - 320)));
-        }
-
-        // Space
-        if (key == 32) return " ";
-
-        // Standard Symbols
-        return switch (key) {
-            case 45 -> shift ? "_" : "-"; // Minus
-            case 61 -> shift ? "+" : "="; // Equals
-            case 91 -> shift ? "{" : "["; // Left bracket
-            case 93 -> shift ? "}" : "]"; // Right bracket
-            case 59 -> shift ? ":" : ";"; // Semicolon
-            case 39 -> shift ? "\"" : "'"; // Apostrophe
-            case 44 -> shift ? "<" : ","; // Comma
-            case 46 -> shift ? ">" : "."; // Period
-            case 47 -> shift ? "?" : "/"; // Slash
-            case 92 -> shift ? "|" : "\\"; // Backslash
-            case 96 -> shift ? "~" : "`"; // Grave accent
-            case 330 -> "."; // Numpad decimal
-            case 331 -> "/"; // Numpad divide
-            case 332 -> "*"; // Numpad multiply
-            case 333 -> "-"; // Numpad subtract
-            case 334 -> "+"; // Numpad add
-            default -> null;
-        };
+    @Override
+    public boolean isInputCaptured() {
+        return "TERMINAL".equals(currentMode) || super.isInputCaptured();
     }
 
     @Override
@@ -258,9 +218,7 @@ public class SystemBlockScreen extends Screen {
         if ("TERMINAL".equals(currentMode)) {
             String str = event.codepointAsString();
             if (str != null && !str.isEmpty()) {
-                if (!(str.equals(lastKeyChar) && (System.currentTimeMillis() - lastKeyTime < 80))) {
-                    ClientPlayNetworking.send(new TerminalInputPayload(blockPos, str, true));
-                }
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, str, true));
                 return true;
             }
         }
@@ -270,16 +228,17 @@ public class SystemBlockScreen extends Screen {
     @Override
     public boolean keyPressed(net.minecraft.client.input.KeyEvent keyEvent) {
         int key = keyEvent.key();
+        int shortcut = keyEvent.shortcutKey();
 
         // In Terminal mode: handle direct terminal input and keys
         if ("TERMINAL".equals(currentMode)) {
-            if (keyEvent.isEscape() || key == 256) { // Escape: exit GUI
+            if (keyEvent.isEscape() || key == InputConstants.KEY_ESCAPE || shortcut == 27) { // Escape: exit GUI
                 this.onClose();
                 return true;
             }
 
             // Clipboard paste (Ctrl+V)
-            if (keyEvent.isPaste() || (keyEvent.hasControlDown() && key == 86)) {
+            if (keyEvent.isPaste() || (keyEvent.hasControlDown() && (shortcut == InputConstants.KEYCODE_V || key == InputConstants.KEY_V || shortcut == 'v' || shortcut == 'V'))) {
                 if (this.minecraft != null) {
                     String clip = this.minecraft.keyboardHandler.getClipboard();
                     if (clip != null && !clip.isEmpty()) {
@@ -289,71 +248,90 @@ public class SystemBlockScreen extends Screen {
                 return true;
             }
 
-            // Ctrl+[A-Z] combinations
-            if (keyEvent.hasControlDown() && key >= 65 && key <= 90) {
-                char ctrlChar = (char) (key - 64);
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, String.valueOf(ctrlChar), true));
-                return true;
+            // Ctrl+[A-Z] combinations (e.g. Ctrl+C for SIGINT, Ctrl+D for EOF, Ctrl+L for clear)
+            if (keyEvent.hasControlDown()) {
+                char ctrlChar = 0;
+                if (shortcut >= 'a' && shortcut <= 'z') {
+                    ctrlChar = (char) (shortcut - 'a' + 1);
+                } else if (shortcut >= 'A' && shortcut <= 'Z') {
+                    ctrlChar = (char) (shortcut - 'A' + 1);
+                } else if (shortcut >= 1 && shortcut <= 26) {
+                    ctrlChar = (char) shortcut;
+                }
+                if (ctrlChar > 0) {
+                    ClientPlayNetworking.send(new TerminalInputPayload(blockPos, String.valueOf(ctrlChar), true));
+                    return true;
+                }
             }
 
-            if (key == 265) { // Up Arrow
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[A", true));
-                return true;
-            } else if (key == 264) { // Down Arrow
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[B", true));
-                return true;
-            } else if (key == 262) { // Right Arrow
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[C", true));
-                return true;
-            } else if (key == 263) { // Left Arrow
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[D", true));
-                return true;
-            } else if (key == 258) { // Tab
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\t", true));
-                return true;
-            } else if (key == 259) { // Backspace (ASCII 127 DEL)
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\u007F", true));
-                return true;
-            } else if (key == 261) { // Delete
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[3~", true));
-                return true;
-            } else if (key == 268) { // Home
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[H", true));
-                return true;
-            } else if (key == 269) { // End
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[F", true));
-                return true;
-            } else if (key == 266) { // Page Up
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[5~", true));
-                return true;
-            } else if (key == 267) { // Page Down
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[6~", true));
-                return true;
-            } else if (key == 257 || key == 335) { // Enter / Keypad Enter
+            // Enter / Return / Keypad Enter
+            if (shortcut == InputConstants.KEYCODE_RETURN || shortcut == InputConstants.KEYCODE_NUMPADENTER
+                    || key == InputConstants.KEY_RETURN || key == InputConstants.KEY_NUMPADENTER
+                    || shortcut == 13 || shortcut == 10 || key == 257 || key == 335) {
                 ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\r", true));
                 return true;
             }
 
-            // Printable letters, digits, symbols, space
-            String ch = getCharForKeyEvent(keyEvent);
-            if (ch != null) {
-                lastKeyTime = System.currentTimeMillis();
-                lastKeyChar = ch;
-                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, ch, true));
+            // Backspace
+            if (shortcut == InputConstants.KEYCODE_BACKSPACE || key == InputConstants.KEY_BACKSPACE || shortcut == 8 || key == 259) {
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\u007F", true)); // ASCII 127 DEL
                 return true;
             }
 
-            // Block inventory key from closing the terminal
-            if (this.minecraft != null && this.minecraft.options.keyInventory.matches(keyEvent)) {
+            // Tab
+            if (shortcut == InputConstants.KEYCODE_TAB || key == InputConstants.KEY_TAB || shortcut == 9 || key == 258) {
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\t", true));
                 return true;
             }
 
+            // Delete
+            if (shortcut == InputConstants.KEYCODE_DELETE || key == InputConstants.KEY_DELETE || shortcut == 127 || key == 261) {
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[3~", true));
+                return true;
+            }
+
+            // Arrow keys
+            if (shortcut == InputConstants.KEYCODE_UP || key == InputConstants.KEY_UP || key == 265) {
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[A", true));
+                return true;
+            } else if (shortcut == InputConstants.KEYCODE_DOWN || key == InputConstants.KEY_DOWN || key == 264) {
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[B", true));
+                return true;
+            } else if (shortcut == InputConstants.KEYCODE_RIGHT || key == InputConstants.KEY_RIGHT || key == 262) {
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[C", true));
+                return true;
+            } else if (shortcut == InputConstants.KEYCODE_LEFT || key == InputConstants.KEY_LEFT || key == 263) {
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[D", true));
+                return true;
+            }
+
+            // Home / End
+            if (shortcut == InputConstants.KEYCODE_HOME || key == InputConstants.KEY_HOME || key == 268) {
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[H", true));
+                return true;
+            } else if (shortcut == InputConstants.KEYCODE_END || key == InputConstants.KEY_END || key == 269) {
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[F", true));
+                return true;
+            }
+
+            // Page Up / Page Down
+            if (shortcut == InputConstants.KEYCODE_PAGEUP || key == InputConstants.KEY_PAGEUP || key == 266) {
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[5~", true));
+                return true;
+            } else if (shortcut == InputConstants.KEYCODE_PAGEDOWN || key == InputConstants.KEY_PAGEDOWN || key == 267) {
+                ClientPlayNetworking.send(new TerminalInputPayload(blockPos, "\033[6~", true));
+                return true;
+            }
+
+            // Consume all other keys in Terminal mode to prevent unwanted game interaction
             return true;
         }
 
         // Single Command mode input handling
         if ("COMMAND".equals(currentMode)) {
-            if (key == 257 || key == 335) {
+            if (shortcut == InputConstants.KEYCODE_RETURN || shortcut == InputConstants.KEYCODE_NUMPADENTER
+                    || key == InputConstants.KEY_RETURN || key == InputConstants.KEY_NUMPADENTER
+                    || shortcut == 13 || shortcut == 10 || key == 257 || key == 335) {
                 if (this.commandInput != null && this.commandInput.isFocused()) {
                     String cmd = this.commandInput.getValue();
                     if (!cmd.isEmpty()) {
@@ -375,6 +353,9 @@ public class SystemBlockScreen extends Screen {
             if (mx >= startX && mx <= startX + inputWidth && my >= terminalY && my <= terminalY + terminalHeight) {
                 // Click inside terminal screen: focus the terminal
                 this.setFocused(null);
+                if (this.minecraft != null && this.minecraft.textInputManager() != null) {
+                    this.minecraft.textInputManager().startTextInput(this);
+                }
                 return true;
             }
         }
