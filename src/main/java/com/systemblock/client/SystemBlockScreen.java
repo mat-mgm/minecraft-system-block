@@ -5,7 +5,9 @@ import com.systemblock.SystemBlockEntity;
 import com.systemblock.TerminalControlPayload;
 import com.systemblock.TerminalInputPayload;
 import com.systemblock.terminal.TerminalGrid;
+import com.systemblock.util.FontHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
@@ -105,19 +107,21 @@ public class SystemBlockScreen extends Screen {
         // In Command mode, the console view occupies space between terminalY and inputY (non-overlapping)
         int consoleHeight = Math.max(50, inputY - terminalY - 4);
 
+        Font termFont = FontHelper.getTerminalFont(this.font);
+
         // Row 1: Console View (for Single Command mode)
         this.consoleView = MultiLineEditBox.builder()
                 .setX(startX)
                 .setY(terminalY)
                 .setTextColor(0xFF00FF88) // Matrix / Emerald green
                 .setShowDecorations(false)
-                .build(this.font, inputWidth, consoleHeight, Component.literal("Console"));
+                .build(termFont, inputWidth, consoleHeight, Component.literal("Console"));
         this.consoleView.setValue(this.commandLogs.toString());
         this.consoleView.visible = "COMMAND".equals(currentMode);
         this.addRenderableWidget(this.consoleView);
 
         // Command bar widgets
-        this.commandInput = new EditBox(this.font, startX, inputY, cmdInputWidth, 20, Component.literal("Command"));
+        this.commandInput = new EditBox(termFont, startX, inputY, cmdInputWidth, 20, Component.literal("Command"));
         this.commandInput.setMaxLength(4096);
         this.commandInput.setValue(this.blockEntity.getCommand());
         this.commandInput.visible = "COMMAND".equals(currentMode);
@@ -450,10 +454,11 @@ public class SystemBlockScreen extends Screen {
             graphics.pose().translate(bgX + 4, bgY + 3);
             graphics.pose().scale(fontScale, fontScale);
 
-            int lineHeight = this.font.lineHeight; // 9
+            Font termFont = FontHelper.getTerminalFont(this.font);
+            int lineHeight = termFont.lineHeight; // 9
             float virtualH = (bgH - 6) / fontScale;
             float virtualW = (bgW - 8) / fontScale;
-            int spaceW = Math.max(1, this.font.width(" "));
+            int spaceW = Math.max(1, termFont.width(" "));
 
             synchronized (terminalGrid) {
                 int gridCols = terminalGrid.getCols();
@@ -510,7 +515,7 @@ public class SystemBlockScreen extends Screen {
 
                     for (int c = 0; c <= renderLimitCol && currentX < virtualW; c++) {
                         String cell = (c < rowCells.length) ? rowCells[c] : " ";
-                        int cellW = (cell == null || cell.equals(" ")) ? spaceW : Math.max(1, this.font.width(cell));
+                        int cellW = (cell == null || cell.equals(" ")) ? spaceW : Math.max(1, termFont.width(cell));
                         int bg = (c < rowBg.length) ? rowBg[c] : 0;
                         boolean hasBg = (bg & 0xFF000000) != 0;
 
@@ -549,7 +554,7 @@ public class SystemBlockScreen extends Screen {
 
                     for (int c = 0; c <= renderLimitCol && currentX < virtualW; c++) {
                         String cell = (c < rowCells.length) ? rowCells[c] : " ";
-                        int cellW = (cell == null || cell.equals(" ")) ? spaceW : Math.max(1, this.font.width(cell));
+                        int cellW = (cell == null || cell.equals(" ")) ? spaceW : Math.max(1, termFont.width(cell));
                         int fg = (c < rowFg.length) ? rowFg[c] : TerminalGrid.DEFAULT_FG;
 
                         if (isCursorRow && c == curX) {
@@ -563,7 +568,7 @@ public class SystemBlockScreen extends Screen {
                                 chunkStartX = currentX;
                             } else if (fg != currentChunkFg) {
                                 if (chunkSb.length() > 0) {
-                                    graphics.text(this.font, chunkSb.toString(), chunkStartX, drawY, currentChunkFg, false);
+                                    graphics.text(termFont, chunkSb.toString(), chunkStartX, drawY, currentChunkFg, false);
                                     chunkSb.setLength(0);
                                 }
                                 currentChunkFg = fg;
@@ -572,7 +577,7 @@ public class SystemBlockScreen extends Screen {
                             chunkSb.append(cell != null ? cell : " ");
                         } else {
                             if (chunkSb.length() > 0) {
-                                graphics.text(this.font, chunkSb.toString(), chunkStartX, drawY, currentChunkFg != -1 ? currentChunkFg : TerminalGrid.DEFAULT_FG, false);
+                                graphics.text(termFont, chunkSb.toString(), chunkStartX, drawY, currentChunkFg != -1 ? currentChunkFg : TerminalGrid.DEFAULT_FG, false);
                                 chunkSb.setLength(0);
                                 currentChunkFg = -1;
                             }
@@ -582,7 +587,7 @@ public class SystemBlockScreen extends Screen {
                     }
 
                     if (chunkSb.length() > 0) {
-                        graphics.text(this.font, chunkSb.toString(), chunkStartX, drawY, currentChunkFg != -1 ? currentChunkFg : TerminalGrid.DEFAULT_FG, false);
+                        graphics.text(termFont, chunkSb.toString(), chunkStartX, drawY, currentChunkFg != -1 ? currentChunkFg : TerminalGrid.DEFAULT_FG, false);
                     }
 
                     // Pass 3: Draw cursor if on this row
