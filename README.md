@@ -16,7 +16,7 @@
   <img src="https://img.shields.io/badge/Environment-Client%20%26%20Server-purple.svg?style=flat-square" alt="Client and Server" />
 </p>
 
-> *"Why confine your boundless human ingenuity to mere blocks of cobblestone and redstone dust when your host kernel has 64 gigabytes of unmonitored RAM and an unrestricted POSIX socket?"*  
+> *"Why confine boundless human ambition to virtual cobblestone? A Minecraft Fabric mod that brings the real world directly into your game via unrestricted host machine access—giving redstone circuits sovereign authority over shell execution, bidirectional hardware feedback, and an embedded interactive terminal."*  
 > (System Block Innovations Laboratories)
 
 ---
@@ -24,6 +24,13 @@
 ## What is the System Block?
 
 The **System Block** is a Minecraft Fabric mod (Minecraft 26.3, Java 25) that bridges the boundary between in-game redstone logic and your real-world operating system. It provides a specialized in-game block that executes arbitrary host commands and scripts directly on the computer or server running Minecraft.
+
+<p align="center">
+  <img src="assets/system_block_in_game.png" alt="System Block placed in Minecraft world with redstone circuits" width="90%" />
+</p>
+<p align="center">
+  <em>The System Block placed in-world, bridging physical redstone contraptions directly to real-world host execution.</em>
+</p>
 
 ### How It Behaves
 - **Redstone In, Execution Out**: Trigger the block with a redstone pulse (buttons, levers, pressure plates, observer clocks, daylight sensors), and it immediately spawns your chosen host command, shell script, or binary.
@@ -94,7 +101,8 @@ The System Block natively supports running autonomous terminal AI coding assista
 Switch to **Terminal** mode:
 - Direct terminal experience: input and output are rendered directly within the main window, with no separate run button or input clutter.
 - Click into the terminal window to focus and send live keystrokes, letters, Backspace, Tab, Enter, and Arrow Keys straight to the host process.
-- Renders authentic 16-color ANSI output, status panels, spinners, and markdown formatting.
+- **Vim & Interactive TUI Navigation**: Single `Escape` or `Ctrl+[` sends `\033` straight to the terminal (exit insert mode in Vim/Neovim, dismiss dialogs in Claude Code). Double-tap `Escape` (within 400ms) or `Shift+Escape` closes the block GUI.
+- **Pixel-Perfect Monospace Grid**: Monospace cell grid with procedural box-drawing lines for seamless, gap-free borders and full Unicode / Nerd Font symbol support (`lf`, `lsd`, `btop`, etc.).
 - Pre-configured terminal environment (`TERM=xterm-256color`, `COLUMNS=80`, `LINES=24`).
 
 ### 2. How AI Agents Control Redstone (`mc-signal`)
