@@ -31,6 +31,15 @@ The **System Block** is a Minecraft Fabric mod (Minecraft 26.3, Java 25) that br
 - **Embedded Terminal GUI**: Right-click the block to inspect streaming `stdout` and `stderr` in a live matrix-green terminal, or toggle into a full interactive 80x24 TUI screen with keyboard navigation.
 - **Spatial Awareness**: Every invoked process inherits the exact in-game Euclidean coordinates of the block via `$MC_POS_X`, `$MC_POS_Y`, and `$MC_POS_Z`.
 
+<p align="center">
+  <img src="assets/command_mode.png" alt="Command Mode Execution" width="48%" />
+  &nbsp;
+  <img src="assets/terminal_mode.png" alt="Terminal Mode TUI" width="48%" />
+</p>
+<p align="center">
+  <em>Left: Single Command Mode with streaming execution logs. Right: Full interactive Terminal Mode with true monospace grid, PTY sub-scaling, and Nerd Font icons.</em>
+</p>
+
 ---
 
 ## With Great Power: Bridging Real-World Control and Minecraft
