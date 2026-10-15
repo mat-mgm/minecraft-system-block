@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import com.systemblock.SystemBlockEntity;
 import com.systemblock.TerminalControlPayload;
 import com.systemblock.TerminalInputPayload;
+import com.systemblock.terminal.BoxDrawingHelper;
 import com.systemblock.terminal.TerminalGrid;
 import com.systemblock.util.FontHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -37,6 +38,7 @@ public class SystemBlockScreen extends Screen {
     private Button modeToggleButton;
     private Button doneButton;
     private static float fontScale = 0.65f;
+    private long lastEscapeTime = 0;
 
     // Dimensions
     private int startX;
@@ -292,8 +294,29 @@ public class SystemBlockScreen extends Screen {
 
         // In Terminal mode: handle direct terminal input and keys
         if ("TERMINAL".equals(currentMode)) {
-            if (keyEvent.isEscape() || key == InputConstants.KEY_ESCAPE || shortcut == 27) { // Escape: exit GUI
+            // Shift+Escape or Ctrl+Escape: always exit GUI immediately
+            if ((keyEvent.isEscape() || key == InputConstants.KEY_ESCAPE || shortcut == 27) && (keyEvent.hasShiftDown() || keyEvent.hasControlDown())) {
                 this.onClose();
+                return true;
+            }
+
+            // Normal Escape:
+            // Double-tap Escape within 400ms exits GUI.
+            // Single Escape sends \033 to terminal (for Vim insert mode, fzf, lf, etc.).
+            if (keyEvent.isEscape() || key == InputConstants.KEY_ESCAPE || shortcut == 27) {
+                long now = System.currentTimeMillis();
+                if (now - lastEscapeTime < 400) {
+                    this.onClose();
+                    return true;
+                }
+                lastEscapeTime = now;
+                sendTerminalInput("\033");
+                return true;
+            }
+
+            // Ctrl+[ (standard terminal ASCII 27 ESC)
+            if (keyEvent.hasControlDown() && (key == InputConstants.KEY_LBRACKET || shortcut == '[' || shortcut == 91)) {
+                sendTerminalInput("\033");
                 return true;
             }
 
@@ -455,10 +478,10 @@ public class SystemBlockScreen extends Screen {
             graphics.pose().scale(fontScale, fontScale);
 
             Font termFont = FontHelper.getTerminalFont(this.font);
-            int lineHeight = termFont.lineHeight; // 9
+            final int cellWidth = 6;
+            final int lineHeight = 9;
             float virtualH = (bgH - 6) / fontScale;
             float virtualW = (bgW - 8) / fontScale;
-            int spaceW = Math.max(1, termFont.width(" "));
 
             synchronized (terminalGrid) {
                 int gridCols = terminalGrid.getCols();
@@ -508,91 +531,63 @@ public class SystemBlockScreen extends Screen {
 
                     int renderLimitCol = Math.max(lastActiveCol, isCursorRow ? curX : -1);
 
-                    // Pass 1: Contiguous background run batching
-                    int currentX = 0;
-                    int spanStartX = 0;
+                    // Pass 1: Contiguous background run batching across monospace grid
+                    int spanStartCol = -1;
                     int currentSpanBg = 0;
 
-                    for (int c = 0; c <= renderLimitCol && currentX < virtualW; c++) {
-                        String cell = (c < rowCells.length) ? rowCells[c] : " ";
-                        int cellW = (cell == null || cell.equals(" ")) ? spaceW : Math.max(1, termFont.width(cell));
+                    for (int c = 0; c <= renderLimitCol && (c * cellWidth) < virtualW; c++) {
                         int bg = (c < rowBg.length) ? rowBg[c] : 0;
                         boolean hasBg = (bg & 0xFF000000) != 0;
 
                         if (hasBg) {
                             if ((currentSpanBg & 0xFF000000) == 0) {
                                 currentSpanBg = bg;
-                                spanStartX = currentX;
+                                spanStartCol = c;
                             } else if (bg != currentSpanBg) {
-                                if (currentX > spanStartX) {
-                                    graphics.fill(spanStartX, drawY, currentX, drawY + lineHeight, currentSpanBg);
-                                }
+                                graphics.fill(spanStartCol * cellWidth, drawY, c * cellWidth, drawY + lineHeight, currentSpanBg);
                                 currentSpanBg = bg;
-                                spanStartX = currentX;
+                                spanStartCol = c;
                             }
                         } else {
                             if ((currentSpanBg & 0xFF000000) != 0) {
-                                if (currentX > spanStartX) {
-                                    graphics.fill(spanStartX, drawY, currentX, drawY + lineHeight, currentSpanBg);
-                                }
+                                graphics.fill(spanStartCol * cellWidth, drawY, c * cellWidth, drawY + lineHeight, currentSpanBg);
                                 currentSpanBg = 0;
+                                spanStartCol = -1;
                             }
                         }
-                        currentX += cellW;
                     }
-                    if ((currentSpanBg & 0xFF000000) != 0 && currentX > spanStartX) {
-                        graphics.fill(spanStartX, drawY, currentX, drawY + lineHeight, currentSpanBg);
+                    if ((currentSpanBg & 0xFF000000) != 0 && spanStartCol != -1) {
+                        int endCol = Math.min(renderLimitCol + 1, (int) Math.ceil(virtualW / cellWidth));
+                        graphics.fill(spanStartCol * cellWidth, drawY, endCol * cellWidth, drawY + lineHeight, currentSpanBg);
                     }
 
-                    // Pass 2: Foreground text batching by color
-                    currentX = 0;
-                    StringBuilder chunkSb = new StringBuilder();
-                    int chunkStartX = 0;
-                    int currentChunkFg = -1;
-                    int cursorVirtualX = -1;
-                    int cursorVirtualW = spaceW;
+                    // Pass 2: Foreground content rendering (procedural box-drawing & text)
+                    for (int c = 0; c <= lastActiveCol; c++) {
+                        int cellX = c * cellWidth;
+                        if (cellX >= virtualW) break;
 
-                    for (int c = 0; c <= renderLimitCol && currentX < virtualW; c++) {
-                        String cell = (c < rowCells.length) ? rowCells[c] : " ";
-                        int cellW = (cell == null || cell.equals(" ")) ? spaceW : Math.max(1, termFont.width(cell));
+                        String cell = (c < rowCells.length) ? rowCells[c] : null;
+                        if (cell == null || cell.isEmpty() || cell.equals(" ")) {
+                            continue;
+                        }
+
                         int fg = (c < rowFg.length) ? rowFg[c] : TerminalGrid.DEFAULT_FG;
 
-                        if (isCursorRow && c == curX) {
-                            cursorVirtualX = currentX;
-                            cursorVirtualW = Math.max(5, cellW);
-                        }
-
-                        if (c <= lastActiveCol) {
-                            if (currentChunkFg == -1) {
-                                currentChunkFg = fg;
-                                chunkStartX = currentX;
-                            } else if (fg != currentChunkFg) {
-                                if (chunkSb.length() > 0) {
-                                    graphics.text(termFont, chunkSb.toString(), chunkStartX, drawY, currentChunkFg, false);
-                                    chunkSb.setLength(0);
-                                }
-                                currentChunkFg = fg;
-                                chunkStartX = currentX;
-                            }
-                            chunkSb.append(cell != null ? cell : " ");
+                        // Procedural Box Drawing & Block Elements: continuous, zero-gap rendering
+                        if (cell.length() == 1 && BoxDrawingHelper.isBoxOrBlock(cell.charAt(0))) {
+                            BoxDrawingHelper.render(graphics, cell.charAt(0), cellX, drawY, cellWidth, lineHeight, fg);
                         } else {
-                            if (chunkSb.length() > 0) {
-                                graphics.text(termFont, chunkSb.toString(), chunkStartX, drawY, currentChunkFg != -1 ? currentChunkFg : TerminalGrid.DEFAULT_FG, false);
-                                chunkSb.setLength(0);
-                                currentChunkFg = -1;
-                            }
+                            // Monospace alignment: center standard glyphs within their 6px cell slot
+                            int charW = termFont.width(cell);
+                            int xOffset = (charW < cellWidth) ? (cellWidth - charW) / 2 : 0;
+                            graphics.text(termFont, cell, cellX + xOffset, drawY, fg, false);
                         }
-
-                        currentX += cellW;
-                    }
-
-                    if (chunkSb.length() > 0) {
-                        graphics.text(termFont, chunkSb.toString(), chunkStartX, drawY, currentChunkFg != -1 ? currentChunkFg : TerminalGrid.DEFAULT_FG, false);
                     }
 
                     // Pass 3: Draw cursor if on this row
-                    if (isCursorRow && cursorVirtualX != -1 && cursorVirtualX + cursorVirtualW <= virtualW) {
-                        graphics.fill(cursorVirtualX, drawY, cursorVirtualX + cursorVirtualW, drawY + lineHeight, 0xFF00FF88);
+                    if (isCursorRow && curX >= 0 && (curX * cellWidth) < virtualW) {
+                        int cursorX = curX * cellWidth;
+                        graphics.fill(cursorX, drawY, cursorX + cellWidth, drawY + lineHeight, 0x8000FF88);
                     }
                 }
             }
