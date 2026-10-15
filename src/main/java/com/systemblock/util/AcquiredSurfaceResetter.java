@@ -1,4 +1,4 @@
-package com.systemblock.mixin;
+package com.systemblock.util;
 
 public interface AcquiredSurfaceResetter {
     void systemblock$resetAcquiredState();

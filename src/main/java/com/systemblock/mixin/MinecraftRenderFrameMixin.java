@@ -2,6 +2,7 @@ package com.systemblock.mixin;
 
 import com.mojang.renderpearl.api.device.GpuSurface;
 import com.mojang.renderpearl.api.device.SurfaceException;
+import com.systemblock.util.AcquiredSurfaceResetter;
 import net.minecraft.client.Minecraft;
 import org.slf4j.Logger;
 import org.spongepowered.asm.mixin.Final;
